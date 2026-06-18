@@ -9,3 +9,8 @@
 2026-06-18 22:35:48,028 [INFO] Nessuna release trovata su GitHub, skip update check.
 2026-06-18 22:41:08,251 [INFO] Nessuna release trovata su GitHub, skip update check.
 2026-06-18 22:55:45,000 [INFO] Nessuna release trovata su GitHub, skip update check.
+2026-06-18 23:16:47,048 [INFO] Update check — local=1.0.0 remote=1.0.0
+2026-06-18 23:27:58,508 [INFO] Update check — local=1.0.0 remote=1.1.0
+2026-06-18 23:34:04,455 [INFO] Update check — local=1.0.0 remote=1.1.0
+2026-06-18 23:52:38,696 [INFO] Update check — local=1.0.0 remote=1.1.0
+2026-06-19 00:01:55,296 [INFO] Update check — local=1.0.0 remote=1.1.0

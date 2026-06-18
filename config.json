@@ -4,5 +4,15 @@
   "chart_types": {
     "trend": "bar_v",
     "top": "pie"
+  },
+  "column_mapping": {
+    "sample_data.xlsx": {
+      "date": "Data",
+      "product": "Categoria",
+      "revenue": "Ricavo",
+      "quantity": "Quantit\u00e0",
+      "channel": "Canale",
+      "geo": null
+    }
   }
 }

@@ -142,6 +142,17 @@ def _detect_fonts() -> None:
         "TkFixedFont"
     )
 
+# ── Display scale (set by SalesAnalyzerApp._init_scale before any widgets) ────
+_SF: float = 1.0   # global scale factor relative to 1300×820 baseline
+
+def fs(n: int) -> int:
+    """Return font size scaled for the current display."""
+    return max(8, round(n * _SF))
+
+def sc(n: int) -> int:
+    """Return a pixel dimension scaled for the current display."""
+    return max(1, round(n * _SF))
+
 # ── Math / color helpers ───────────────────────────────────────────────────────
 def _ease_quint(t: float) -> float:
     """Quintic ease-out — snappy start, soft stop."""
@@ -345,7 +356,7 @@ class _Btn(tk.Label):
                  font_args=None, padx=12, pady=5, cursor="hand2", **kw):
         _bg = bg or C["surface"]
         _fg = fg or C["text_primary"]
-        _font = font_args or (UI_FONT, 10)
+        _font = font_args or (UI_FONT, fs(10))
         super().__init__(parent, text=text, bg=_bg, fg=_fg,
                          font=_font, padx=padx, pady=pady,
                          cursor=cursor, **kw)
@@ -383,7 +394,7 @@ class PillGroup(tk.Frame):
 
         for opt in options:
             lbl = tk.Label(inner, text=opt, padx=11, pady=4,
-                           cursor="hand2", font=(UI_FONT, 10))
+                           cursor="hand2", font=(UI_FONT, fs(10)))
             lbl.pack(side="left")
             lbl.bind("<Button-1>", lambda _, o=opt: self._pick(o))
             self._pills[opt] = lbl
@@ -431,7 +442,7 @@ class ChannelDropdown(tk.Frame):
         self._unbind_id: Optional[str] = None
 
         self._btn = tk.Label(self, text="Canale  ▾", bg=C["surface"],
-                             fg=C["text_secondary"], font=(UI_FONT, 10),
+                             fg=C["text_secondary"], font=(UI_FONT, fs(10)),
                              padx=12, pady=5, cursor="hand2")
         self._btn.pack()
         self._btn.bind("<Button-1>", lambda _: self._toggle())
@@ -486,7 +497,7 @@ class ChannelDropdown(tk.Frame):
 
         sel_lbl = tk.Label(inner, text="Seleziona tutti",
                            bg=C["surface_elevated"], fg=C["accent"],
-                           font=(UI_FONT, 9), padx=10, pady=5, cursor="hand2")
+                           font=(UI_FONT, fs(9)), padx=10, pady=5, cursor="hand2")
         sel_lbl.pack(fill="x")
         sel_lbl.bind("<Button-1>", lambda _: _all())
 
@@ -499,7 +510,7 @@ class ChannelDropdown(tk.Frame):
                            bg=C["surface_elevated"], fg=C["text_primary"],
                            selectcolor=C["accent"],
                            activebackground=C["surface_elevated"],
-                           font=(UI_FONT, 10), command=self._update_label,
+                           font=(UI_FONT, fs(10)), command=self._update_label,
                            padx=4).pack(anchor="w")
 
         # Raise the panel above all sibling widgets
@@ -608,7 +619,7 @@ class DropZone(tk.Frame):
         inner.place(relx=0.5, rely=0.5, anchor="center")
 
         # Dashed border box (simulated with Canvas)
-        box = tk.Canvas(inner, width=320, height=220,
+        box = tk.Canvas(inner, width=sc(320), height=sc(220),
                         bg=C["bg"], highlightthickness=0)
         box.pack()
         # Draw dashed border rectangle
@@ -616,18 +627,18 @@ class DropZone(tk.Frame):
                               width=1, dash=(6, 4))
 
         tk.Label(inner, text="📊", bg=C["bg"], fg=C["text_secondary"],
-                 font=(UI_FONT, 36)).pack(pady=(8, 4))
+                 font=(UI_FONT, fs(36))).pack(pady=(8, 4))
         tk.Label(inner, text="Carica un file Excel per iniziare",
                  bg=C["bg"], fg=C["text_primary"],
-                 font=(UI_FONT, 13, "bold")).pack()
+                 font=(UI_FONT, fs(13), "bold")).pack()
         tk.Label(inner,
                  text="Formati supportati: .xlsx  .xls  .xlsm",
                  bg=C["bg"], fg=C["text_secondary"],
-                 font=(UI_FONT, 10)).pack(pady=(2, 14))
+                 font=(UI_FONT, fs(10))).pack(pady=(2, 14))
 
         browse = tk.Label(inner, text="  Sfoglia file  ",
                           bg=C["accent"], fg="#ffffff",
-                          font=(UI_FONT, 11, "bold"),
+                          font=(UI_FONT, fs(11), "bold"),
                           padx=20, pady=8, cursor="hand2")
         browse.pack()
         browse.bind("<Button-1>", lambda _: on_browse())
@@ -647,7 +658,7 @@ class Toast(tk.Frame):
                          highlightthickness=1,
                          highlightbackground=C["border"])
         tk.Label(self, text=message, bg=C["surface_elevated"],
-                 fg=C["text_primary"], font=(UI_FONT, 10),
+                 fg=C["text_primary"], font=(UI_FONT, fs(10)),
                  padx=16, pady=8).pack()
 
         root.update_idletasks()
@@ -703,6 +714,7 @@ class ColumnConfigDialog(tk.Toplevel):
         self._combos: Dict[str, ttk.Combobox] = {}
         self._err_lbls: Dict[str, tk.Label]   = {}
 
+        self.protocol("WM_DELETE_WINDOW", self._close)
         self._center(parent)
         self._build(mapping)
 
@@ -710,18 +722,18 @@ class ColumnConfigDialog(tk.Toplevel):
         self.update_idletasks()
         pw = parent.winfo_width(); ph = parent.winfo_height()
         px = parent.winfo_rootx(); py = parent.winfo_rooty()
-        w = 420; h = 520
+        w = sc(420); h = sc(520)
         self.geometry(f"{w}x{h}+{px+(pw-w)//2}+{py+(ph-h)//2}")
 
     def _build(self, mapping: Dict) -> None:
         # Title
         tk.Label(self, text="Configura Colonne", bg=C["bg"],
-                 fg=C["text_primary"], font=(UI_FONT, 13, "bold")).pack(
+                 fg=C["text_primary"], font=(UI_FONT, fs(13), "bold")).pack(
             pady=(20, 4), padx=24, anchor="w")
         tk.Label(self,
                  text="Associa le colonne del tuo Excel ai campi dell'app.",
                  bg=C["bg"], fg=C["text_secondary"],
-                 font=(UI_FONT, 10)).pack(padx=24, anchor="w")
+                 font=(UI_FONT, fs(10))).pack(padx=24, anchor="w")
         tk.Frame(self, bg=C["border"], height=1).pack(fill="x", padx=0, pady=12)
 
         # Style comboboxes
@@ -751,7 +763,7 @@ class ColumnConfigDialog(tk.Toplevel):
 
             tk.Label(row, text=label + hint, bg=C["bg"],
                      fg=C["text_primary"] if required else C["text_secondary"],
-                     font=(UI_FONT, 10), anchor="w",
+                     font=(UI_FONT, fs(10)), anchor="w",
                      width=20).pack(side="left")
 
             cb = ttk.Combobox(row, values=choices, state="readonly",
@@ -762,7 +774,7 @@ class ColumnConfigDialog(tk.Toplevel):
             self._combos[role] = cb
 
             err = tk.Label(form, text="", bg=C["bg"],
-                           fg=C["accent_warm"], font=(UI_FONT, 9))
+                           fg=C["accent_warm"], font=(UI_FONT, fs(9)))
             err.pack(anchor="e", pady=0)
             self._err_lbls[role] = err
 
@@ -775,14 +787,26 @@ class ColumnConfigDialog(tk.Toplevel):
         _Btn(btns, "Applica", self._apply,
              bg=C["accent"], fg="#ffffff", padx=16, pady=7).pack(
             side="left", padx=6)
-        _Btn(btns, "Annulla", self.destroy,
+        _Btn(btns, "Annulla", self._close,
              bg=C["surface"], padx=16, pady=7).pack(side="left", padx=6)
         _Btn(btns, "Reset automatico", self._reset_auto,
              bg=C["surface_elevated"], fg=C["text_secondary"],
              padx=12, pady=7).pack(side="left", padx=6)
 
+    def _close(self) -> None:
+        """Release modal grab and return focus to the main window."""
+        parent = self.master
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        self.destroy()
+        try:
+            parent.focus_force()
+        except Exception:
+            pass
+
     def _apply(self) -> None:
-        # Clear previous errors
         for lbl in self._err_lbls.values():
             lbl.config(text="")
 
@@ -803,7 +827,7 @@ class ColumnConfigDialog(tk.Toplevel):
             return
 
         self.result = result
-        self.destroy()
+        self._close()
 
     def _reset_auto(self) -> None:
         auto = self._mapper.auto_map(self._columns)
@@ -813,6 +837,391 @@ class ColumnConfigDialog(tk.Toplevel):
         for lbl in self._err_lbls.values():
             lbl.config(text="")
         self.reset_to_auto = True
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Excel Column Picker  — visual column assignment with live data preview
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ExcelColumnPicker(tk.Toplevel):
+    """
+    Modal dialog that shows the first 50 rows of the loaded Excel file.
+    The user selects a role (bottom-left buttons), then clicks a column header
+    in the preview table to assign it.  Revenue and Quantity support multiple
+    columns (they are summed at analysis time).
+    """
+
+    _ROLE_DEFS: List[Tuple[str, str, bool, bool]] = [
+        # (role_key, display_label, required, multi_allowed)
+        ("date",     "📅 Data",       True,  False),
+        ("product",  "📦 Prodotto",   True,  False),
+        ("revenue",  "💰 Fatturato",  True,  True),
+        ("quantity", "🔢 Quantità",   False, True),
+        ("channel",  "📡 Canale",     False, False),
+        ("geo",      "🗺 Città",      False, False),
+    ]
+    _ROLE_COLORS = {
+        "date":     "#38bdf8",
+        "product":  "#43e97b",
+        "revenue":  "#6c63ff",
+        "quantity": "#fbbf24",
+        "channel":  "#fb923c",
+        "geo":      "#f472b6",
+    }
+    _ROLE_ABBR = {
+        "date": "DATA", "product": "PROD", "revenue": "REV",
+        "quantity": "QTY", "channel": "CH", "geo": "GEO",
+    }
+
+    def __init__(self, parent: tk.Tk, df: pd.DataFrame,
+                 mapping: Dict, mapper: "ColumnMapper"):
+        super().__init__(parent)
+        self.title("Seleziona Colonne — Anteprima Dati")
+        self.configure(bg=C["bg"])
+        self.resizable(True, True)
+
+        self.result: Optional[Dict]  = None
+        self.reset_to_auto: bool     = False
+
+        self._df      = df
+        self._mapper  = mapper
+        self._columns = list(df.columns)
+
+        # Internal mapping: role → str | List[str]
+        self._map: Dict[str, Any] = {}
+        for role, _, _, multi in self._ROLE_DEFS:
+            val = mapping.get(role)
+            if val is None:
+                self._map[role] = [] if multi else None
+            elif isinstance(val, list):
+                self._map[role] = list(val) if multi else (val[0] if val else None)
+            else:
+                self._map[role] = [val] if multi else val
+
+        # Reverse: column → role (for display; multi cols all point to same role)
+        self._col_role: Dict[str, str] = {}
+        for role, val in self._map.items():
+            if isinstance(val, list):
+                for c in val:
+                    if c:
+                        self._col_role[c] = role
+            elif val:
+                self._col_role[val] = role
+
+        self._active_role: str = "date"
+        self._err_var = tk.StringVar()
+
+        # Size: 90 % of parent
+        pw = parent.winfo_width(); ph = parent.winfo_height()
+        w  = min(int(pw * 0.92), 1440)
+        h  = min(int(ph * 0.92), 900)
+        px = parent.winfo_rootx(); py = parent.winfo_rooty()
+        self.geometry(f"{w}x{h}+{px+(pw-w)//2}+{py+(ph-h)//2}")
+
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self._apply)
+        self._build()
+        # Start on first unfilled required role, or date if all filled
+        first = "date"
+        for role, _, required, _ in self._ROLE_DEFS:
+            if required and not self._is_filled(role):
+                first = role
+                break
+        self._select_role(first)
+
+    # ── Build UI ──────────────────────────────────────────────────────────────
+
+    def _build(self) -> None:
+        # Header
+        hdr = tk.Frame(self, bg=C["bg"])
+        hdr.pack(fill="x", padx=16, pady=(12, 0))
+        tk.Label(hdr, text="Seleziona Colonne",
+                 bg=C["bg"], fg=C["text_primary"],
+                 font=(UI_FONT, fs(13), "bold")).pack(side="left")
+        tk.Label(hdr,
+                 text="  Scegli un ruolo → clicca l'intestazione della colonna  "
+                      "(per Fatturato/Quantità puoi selezionare più colonne)",
+                 bg=C["bg"], fg=C["text_secondary"],
+                 font=(UI_FONT, fs(10))).pack(side="left")
+        tk.Frame(self, bg=C["border"], height=1).pack(fill="x", pady=(8, 0))
+
+        # Data preview (expands to fill most of the dialog)
+        self._preview_frame = tk.Frame(self, bg=C["bg"])
+        self._preview_frame.pack(fill="both", expand=True, padx=8, pady=8)
+        self._build_preview()
+
+        tk.Frame(self, bg=C["border"], height=1).pack(fill="x")
+
+        # Bottom bar
+        bot = tk.Frame(self, bg=C["surface"], pady=10)
+        bot.pack(fill="x", side="bottom")
+
+        # ── Role buttons ──
+        lside = tk.Frame(bot, bg=C["surface"])
+        lside.pack(side="left", padx=14, fill="y")
+        tk.Label(lside, text="Ruolo attivo →",
+                 bg=C["surface"], fg=C["text_secondary"],
+                 font=(UI_FONT, fs(9))).pack(anchor="w")
+        btn_row = tk.Frame(lside, bg=C["surface"])
+        btn_row.pack(anchor="w", pady=(4, 0))
+        self._role_btns: Dict[str, tk.Label] = {}
+        for role, label, required, _ in self._ROLE_DEFS:
+            b = tk.Label(btn_row, text=label,
+                         bg=C["surface"], fg=C["text_secondary"],
+                         font=(UI_FONT, fs(9)),
+                         padx=sc(8), pady=sc(4), cursor="hand2",
+                         highlightthickness=1,
+                         highlightbackground=C["border"])
+            b.pack(side="left", padx=3)
+            b.bind("<Button-1>", lambda _, r=role: self._select_role(r))
+            self._role_btns[role] = b
+
+        # ── Error + summary ──
+        mid = tk.Frame(bot, bg=C["surface"])
+        mid.pack(side="left", fill="both", expand=True, padx=14)
+        tk.Label(mid, textvariable=self._err_var,
+                 bg=C["surface"], fg=C["accent_warm"],
+                 font=(UI_FONT, fs(9))).pack(anchor="w")
+        self._sum_frame = tk.Frame(mid, bg=C["surface"])
+        self._sum_frame.pack(anchor="w", pady=(4, 0))
+        self._rebuild_summary()
+
+        # ── Action buttons ──
+        rside = tk.Frame(bot, bg=C["surface"])
+        rside.pack(side="right", padx=14)
+        _Btn(rside, "  Applica  ", self._apply,
+             bg=C["accent"], fg="#ffffff",
+             font_args=(UI_FONT, fs(10), "bold"),
+             padx=14, pady=sc(6)).pack(side="left", padx=4)
+        _Btn(rside, "  Annulla  ", self._close,
+             bg=C["surface_elevated"],
+             font_args=(UI_FONT, fs(10)),
+             padx=14, pady=sc(6)).pack(side="left", padx=4)
+        _Btn(rside, "Reset auto", self._reset_auto,
+             bg=C["surface"], fg=C["text_secondary"],
+             font_args=(UI_FONT, fs(9)),
+             padx=10, pady=sc(6)).pack(side="left", padx=4)
+
+    def _build_preview(self) -> None:
+        cols = self._columns
+        sty  = ttk.Style()
+        sty.theme_use("default")
+        sty.configure("EP.Treeview",
+                       background=C["surface"],
+                       foreground=C["text_primary"],
+                       fieldbackground=C["surface"],
+                       rowheight=sc(22),
+                       font=(UI_FONT, fs(9)))
+        sty.configure("EP.Treeview.Heading",
+                       background=C["surface_elevated"],
+                       foreground=C["text_secondary"],
+                       font=(UI_FONT, fs(9), "bold"),
+                       relief="flat")
+        sty.map("EP.Treeview",
+                background=[("selected", C["accent"])],
+                foreground=[("selected", "#ffffff")])
+        sty.map("EP.Treeview.Heading",
+                background=[("active", C["border"])],
+                relief=[("active", "flat")])
+
+        self._tree = ttk.Treeview(self._preview_frame,
+                                   columns=cols, show="headings",
+                                   style="EP.Treeview", selectmode="none")
+
+        col_w = max(sc(80), min(sc(160), 1200 // max(len(cols), 1)))
+        for col in cols:
+            self._tree.heading(col, text=self._hdr_text(col),
+                               command=lambda c=col: self._col_click(c))
+            self._tree.column(col, width=col_w, minwidth=sc(60), stretch=False)
+
+        for _, row in self._df.head(50).iterrows():
+            self._tree.insert("", "end",
+                              values=[str(row[c])[:50] for c in cols])
+
+        vsb = ttk.Scrollbar(self._preview_frame, orient="vertical",
+                             command=self._tree.yview)
+        hsb = ttk.Scrollbar(self._preview_frame, orient="horizontal",
+                             command=self._tree.xview)
+        self._tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        vsb.pack(side="right", fill="y")
+        hsb.pack(side="bottom", fill="x")
+        self._tree.pack(fill="both", expand=True)
+
+    # ── Interaction ───────────────────────────────────────────────────────────
+
+    def _hdr_text(self, col: str) -> str:
+        role = self._col_role.get(col)
+        if not role:
+            return col
+        abbr = self._ROLE_ABBR[role]
+        # Show index number for multi-capable roles that have multiple cols
+        val = self._map.get(role)
+        if isinstance(val, list) and len(val) > 1:
+            idx = val.index(col) + 1 if col in val else "?"
+            return f"{col}  [{abbr} {idx}]"
+        return f"{col}  [{abbr}]"
+
+    def _col_click(self, col: str) -> None:
+        role  = self._active_role
+        _, _, required, multi = next(d for d in self._ROLE_DEFS if d[0] == role)
+        cur   = self._map[role]
+        was_filled = self._is_filled(role)
+
+        if multi:
+            # Toggle: add if not present, remove if already there
+            lst = list(cur) if isinstance(cur, list) else ([cur] if cur else [])
+            if col in lst:
+                lst.remove(col)
+                del self._col_role[col]
+            else:
+                self._clear_col_from_other_roles(col, role)
+                lst.append(col)
+                self._col_role[col] = role
+            self._map[role] = lst
+            # For multi roles, stay on this role so user can keep adding columns
+        else:
+            # Single: replace
+            if cur and cur in self._col_role and self._col_role.get(cur) == role:
+                del self._col_role[cur]
+                self._refresh_hdr(cur)
+            self._clear_col_from_other_roles(col, role)
+            if self._map[role] == col:
+                # Clicking same col again → deassign
+                self._map[role] = None
+                if col in self._col_role:
+                    del self._col_role[col]
+            else:
+                self._map[role] = col
+                self._col_role[col] = role
+            # For single roles: only advance if this role just became filled
+            # (don't advance if user is just changing an already-filled role)
+            if not was_filled and self._is_filled(role) and required:
+                self._refresh_hdr(col)
+                self._rebuild_summary()
+                self._err_var.set("")
+                self._advance_role()
+                return
+
+        self._refresh_hdr(col)
+        self._rebuild_summary()
+        self._err_var.set("")
+
+    def _clear_col_from_other_roles(self, col: str, keep_role: str) -> None:
+        old_role = self._col_role.get(col)
+        if old_role and old_role != keep_role:
+            val = self._map[old_role]
+            if isinstance(val, list):
+                if col in val:
+                    val.remove(col)
+            elif val == col:
+                self._map[old_role] = None
+            if col in self._col_role:
+                del self._col_role[col]
+            self._refresh_hdr(col)
+
+    def _refresh_hdr(self, col: str) -> None:
+        self._tree.heading(col, text=self._hdr_text(col),
+                           command=lambda c=col: self._col_click(c))
+
+    def _select_role(self, role: str) -> None:
+        self._active_role = role
+        active_col = self._ROLE_COLORS.get(role, C["accent"])
+        for r, btn in self._role_btns.items():
+            if r == role:
+                btn.config(bg=active_col, fg="#111111",
+                           highlightbackground=active_col)
+            else:
+                btn.config(bg=C["surface"], fg=C["text_secondary"],
+                           highlightbackground=C["border"])
+
+    def _advance_role(self) -> None:
+        """After an assignment, move to the next unfilled required role."""
+        for role, _, required, _ in self._ROLE_DEFS:
+            if required and not self._is_filled(role):
+                self._select_role(role)
+                return
+
+    def _is_filled(self, role: str) -> bool:
+        val = self._map.get(role)
+        if isinstance(val, list):
+            return len(val) > 0
+        return bool(val)
+
+    def _rebuild_summary(self) -> None:
+        for w in self._sum_frame.winfo_children():
+            w.destroy()
+        for role, label, required, _ in self._ROLE_DEFS:
+            val = self._map.get(role)
+            if isinstance(val, list):
+                display = " + ".join(val) if val else "—"
+                filled  = bool(val)
+            else:
+                display = val or "—"
+                filled  = bool(val)
+            color = (self._ROLE_COLORS[role] if filled
+                     else (C["accent_warm"] if required else C["text_secondary"]))
+            lbl_text = f"{label}: {display}"
+            tk.Label(self._sum_frame, text=lbl_text,
+                     bg=C["surface"], fg=color,
+                     font=(UI_FONT, fs(8)), padx=6).pack(side="left")
+
+    # ── Validation & actions ──────────────────────────────────────────────────
+
+    def _validate(self) -> bool:
+        errs = []
+        if not self._is_filled("date"):
+            errs.append("Data obbligatoria")
+        if not self._is_filled("product"):
+            errs.append("Prodotto obbligatorio")
+        if not self._is_filled("revenue") and not self._is_filled("quantity"):
+            errs.append("Almeno Fatturato o Quantità richiesto")
+        if errs:
+            self._err_var.set("⚠  " + "   ·   ".join(errs))
+            return False
+        return True
+
+    def _apply(self) -> None:
+        if not self._validate():
+            return
+        # Normalise: single-item lists → plain strings; empty lists → None
+        out: Dict[str, Any] = {}
+        for role, _, _, multi in self._ROLE_DEFS:
+            val = self._map.get(role)
+            if multi:
+                lst = val if isinstance(val, list) else ([val] if val else [])
+                out[role] = lst if len(lst) > 1 else (lst[0] if lst else None)
+            else:
+                out[role] = val or None
+        self.result = out
+        self._close()
+
+    def _reset_auto(self) -> None:
+        auto = self._mapper.auto_map(self._columns)
+        self._map = {}
+        self._col_role = {}
+        for role, _, _, multi in self._ROLE_DEFS:
+            val = auto.get(role)
+            self._map[role] = [val] if (multi and val) else val
+            if val:
+                self._col_role[val] = role
+        for col in self._columns:
+            self._refresh_hdr(col)
+        self._select_role("date")
+        self._rebuild_summary()
+        self.reset_to_auto = True
+        self._err_var.set("")
+
+    def _close(self) -> None:
+        parent = self.master
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        self.destroy()
+        try:
+            parent.focus_force()
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -854,7 +1263,7 @@ class ChartTypePanel(tk.Frame):
         hdr = tk.Frame(body, bg=C["surface_elevated"])
         hdr.pack(fill="x", padx=12, pady=(10, 4))
         tk.Label(hdr, text="Tipo di grafico", bg=C["surface_elevated"],
-                 fg=C["text_primary"], font=(UI_FONT, 10, "bold")).pack(side="left")
+                 fg=C["text_primary"], font=(UI_FONT, fs(10), "bold")).pack(side="left")
 
         # Subtitle: show which view is active and what's available
         if geo_disabled:
@@ -866,7 +1275,7 @@ class ChartTypePanel(tk.Frame):
             sub_col = C["text_secondary"]
 
         tk.Label(body, text=sub, bg=C["surface_elevated"],
-                 fg=sub_col, font=(UI_FONT, 8),
+                 fg=sub_col, font=(UI_FONT, fs(8)),
                  wraplength=260, justify="left").pack(
             anchor="w", padx=12, pady=(0, 8))
 
@@ -934,7 +1343,7 @@ class ChartTypePanel(tk.Frame):
             hl   = C["border"]
             hl_w = 1
 
-        card = tk.Frame(parent, bg=bg, width=114, height=68,
+        card = tk.Frame(parent, bg=bg, width=sc(114), height=sc(68),
                         highlightthickness=hl_w,
                         highlightbackground=hl,
                         highlightcolor=hl)
@@ -945,11 +1354,11 @@ class ChartTypePanel(tk.Frame):
         fg_lbl  = _lerp_color(C["text_secondary"], C["bg"], 0.5) if dim else C["text_secondary"]
 
         icon_lbl = tk.Label(card, text=icon, bg=bg, fg=fg_icon,
-                            font=(UI_FONT, 17))
+                            font=(UI_FONT, fs(17)))
         icon_lbl.place(relx=0.5, rely=0.34, anchor="center")
 
         text_lbl = tk.Label(card, text=label, bg=bg, fg=fg_lbl,
-                            font=(UI_FONT, 8))
+                            font=(UI_FONT, fs(8)))
         text_lbl.place(relx=0.5, rely=0.74, anchor="center")
 
         badge_text = "✓" if selected else ("✗" if dim else "")
@@ -957,7 +1366,7 @@ class ChartTypePanel(tk.Frame):
                       else _lerp_color(C["accent_warm"], C["bg"], 0.35))
         if badge_text:
             tk.Label(card, text=badge_text, bg=bg, fg=badge_col,
-                     font=(UI_FONT, 7, "bold")).place(
+                     font=(UI_FONT, fs(7), "bold")).place(
                 relx=0.88, rely=0.14, anchor="center")
 
         if available:
@@ -997,6 +1406,50 @@ class ChartTypePanel(tk.Frame):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Hover tooltip overlay (tkinter-native, guaranteed to stay inside the window)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class _HoverTip(tk.Frame):
+    """
+    A lightweight floating tooltip placed directly in the root window via place().
+    Because it lives in the root window coordinate system, it can be perfectly
+    clamped to the window edges — something matplotlib annotations cannot do.
+    """
+
+    def __init__(self, root: tk.Tk):
+        super().__init__(root, bg=C["surface_elevated"],
+                         highlightthickness=1,
+                         highlightbackground=C["border"],
+                         highlightcolor=C["border"])
+        self._lbl = tk.Label(self, bg=C["surface_elevated"],
+                             fg=C["text_primary"],
+                             font=(MONO_FONT, fs(10)),
+                             justify="left",
+                             padx=sc(12), pady=sc(7))
+        self._lbl.pack()
+
+    def show(self, root_x: int, root_y: int, text: str) -> None:
+        self._lbl.config(text=text)
+        self.update_idletasks()
+        w  = self.winfo_reqwidth()
+        h  = self.winfo_reqheight()
+        rw = self.master.winfo_width()
+        rh = self.master.winfo_height()
+        pad = 16
+        x = root_x + pad
+        y = root_y + pad
+        if x + w > rw - 4: x = root_x - w - 4
+        if y + h > rh - 4: y = root_y - h - 4
+        x = max(2, x)
+        y = max(2, y)
+        self.place(x=x, y=y)
+        self.lift()
+
+    def hide(self) -> None:
+        self.place_forget()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # KPI strip
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1015,17 +1468,17 @@ class KPICard(tk.Frame):
         top = tk.Frame(body, bg=C["surface"])
         top.pack(anchor="w")
         tk.Label(top, text=icon, bg=C["surface"],
-                 fg=C["text_secondary"], font=(UI_FONT, 13)).pack(side="left")
+                 fg=C["text_secondary"], font=(UI_FONT, fs(13))).pack(side="left")
         tk.Label(top, text=f"  {label}", bg=C["surface"],
-                 fg=C["text_secondary"], font=(UI_FONT, 11)).pack(side="left")
+                 fg=C["text_secondary"], font=(UI_FONT, fs(11))).pack(side="left")
 
         self._val = tk.Label(body, text="—", bg=C["surface"],
                              fg=C["text_primary"],
-                             font=(MONO_FONT, 16, "bold"))
+                             font=(MONO_FONT, fs(16), "bold"))
         self._val.pack(anchor="w", pady=(3, 1))
 
         self._delta = tk.Label(body, text="", bg=C["surface"],
-                               fg=C["text_secondary"], font=(UI_FONT, 11))
+                               fg=C["text_secondary"], font=(UI_FONT, fs(11)))
         self._delta.pack(anchor="w")
 
     def animate(self, value, fmt_fn, delta_str: str = "",
@@ -1057,7 +1510,7 @@ class KPIStrip(tk.Frame):
     """Row of 4 KPI cards."""
 
     _DEFS = [
-        ("₿",  "Ricavo Totale"),
+        ("€",  "Ricavo Totale"),
         ("📦", "Unità Vendute"),
         ("⌀",  "Ordine Medio"),
         ("📡", "Canale Top"),
@@ -1108,7 +1561,7 @@ class TopBar(tk.Frame):
     """48-px top bar: logo | filename  ··  version badge | load button."""
 
     def __init__(self, parent, on_load, **kw):
-        super().__init__(parent, bg=C["bg"], height=48, **kw)
+        super().__init__(parent, bg=C["bg"], height=sc(48), **kw)
         self.pack_propagate(False)
         tk.Frame(self, bg=C["border"], height=1).pack(side="bottom", fill="x")
 
@@ -1116,12 +1569,12 @@ class TopBar(tk.Frame):
         left.pack(side="left", padx=16, fill="y")
 
         tk.Label(left, text="Sales Analyzer", bg=C["bg"],
-                 fg=C["accent"], font=(UI_FONT, 14, "bold")).pack(
+                 fg=C["accent"], font=(UI_FONT, fs(14), "bold")).pack(
             side="left", pady=0)
 
         self._file_lbl = tk.Label(left, text="", bg=C["bg"],
                                    fg=C["text_secondary"],
-                                   font=(UI_FONT, 11))
+                                   font=(UI_FONT, fs(11)))
         self._file_lbl.pack(side="left", padx=(10, 0))
 
         right = tk.Frame(self, bg=C["bg"])
@@ -1131,13 +1584,13 @@ class TopBar(tk.Frame):
         ver_bg = C["surface"]
         ver = tk.Label(right, text=f" v{APP_VERSION} ",
                        bg=ver_bg, fg=C["text_secondary"],
-                       font=(UI_FONT, 9), padx=6, pady=2)
+                       font=(UI_FONT, fs(9)), padx=6, pady=2)
         ver.pack(side="right", padx=(8, 0))
 
         # Load button (always visible)
         load = _Btn(right, "  📂  Carica  ", on_load,
                     bg=C["surface"], fg=C["text_primary"],
-                    font_args=(UI_FONT, 10, "bold"), padx=14, pady=5)
+                    font_args=(UI_FONT, fs(10), "bold"), padx=14, pady=5)
         load.pack(side="right")
 
         self._update_slot: Optional[tk.Widget] = None
@@ -1153,7 +1606,7 @@ class TopBar(tk.Frame):
         btn = _Btn(
             self, f"  ↑ v{version}  ", on_download,
             bg=C["accent"], fg="#ffffff",
-            font_args=(UI_FONT, 9, "bold"), padx=10, pady=4,
+            font_args=(UI_FONT, fs(9), "bold"), padx=10, pady=4,
         )
         btn.pack(side="right", padx=(0, 8))
         self._update_slot = btn
@@ -1163,8 +1616,8 @@ class TopBar(tk.Frame):
 # Sidebar
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_NAV_ITEM_H = 52   # px per nav item
-_NAV_TOP    = 16   # y offset before first item inside sidebar
+_NAV_ITEM_H: int = 52   # scaled in SalesAnalyzerApp._init_scale()
+_NAV_TOP:    int = 16
 
 class Sidebar(tk.Frame):
     """
@@ -1180,7 +1633,7 @@ class Sidebar(tk.Frame):
     ]
 
     def __init__(self, parent, on_select, **kw):
-        super().__init__(parent, bg=C["bg"], width=200, **kw)
+        super().__init__(parent, bg=C["bg"], width=sc(200), **kw)
         self.pack_propagate(False)
         tk.Frame(self, bg=C["border"], width=1).pack(side="right", fill="y")
 
@@ -1191,7 +1644,7 @@ class Sidebar(tk.Frame):
 
         # "VISTE" header
         tk.Label(self, text="VISTE", bg=C["bg"],
-                 fg=C["text_secondary"], font=(UI_FONT, 9, "bold")).pack(
+                 fg=C["text_secondary"], font=(UI_FONT, fs(9), "bold")).pack(
             anchor="w", padx=20, pady=(20, 6))
 
         # Sliding indicator — positioned with place() over the item area
@@ -1208,7 +1661,7 @@ class Sidebar(tk.Frame):
             inner = tk.Frame(row, bg=C["bg"])
             inner.place(relx=0, rely=0, relwidth=1, relheight=1)
             tk.Label(inner, text=f"  {icon}  {label}", bg=C["bg"],
-                     fg=C["text_secondary"], font=(UI_FONT, 11),
+                     fg=C["text_secondary"], font=(UI_FONT, fs(11)),
                      anchor="w").place(relx=0, rely=0, relwidth=1, relheight=1)
             inner.bind("<Button-1>",  lambda _, k=key: self._click(k))
             inner.bind("<Enter>",     lambda _, w=inner: w.config(bg=C["surface_elevated"]))
@@ -1284,7 +1737,7 @@ class FilterBar(tk.Frame):
 
     def __init__(self, parent, on_apply, on_reset,
                  on_col_config=None, on_chart_type=None, **kw):
-        super().__init__(parent, bg=C["surface"], height=48, **kw)
+        super().__init__(parent, bg=C["surface"], height=sc(48), **kw)
         self.pack_propagate(False)
         tk.Frame(self, bg=C["border"], height=1).pack(side="top",    fill="x")
         tk.Frame(self, bg=C["border"], height=1).pack(side="bottom", fill="x")
@@ -1303,7 +1756,7 @@ class FilterBar(tk.Frame):
         # ── LEFT: ⚙ Colonne ──
         self._col_btn = tk.Label(
             row, text="⚙  Colonne", bg=C["surface"], fg=self._DIM_FG,
-            font=(UI_FONT, 10), padx=10, pady=5)
+            font=(UI_FONT, fs(10)), padx=10, pady=5)
         self._col_btn.pack(side="left", padx=(2, 0))
         self._col_btn.bind("<Button-1>", lambda _: self._col_clicked())
 
@@ -1311,7 +1764,7 @@ class FilterBar(tk.Frame):
 
         def lbl(text):
             return tk.Label(row, text=text, bg=C["surface"],
-                            fg=C["text_secondary"], font=(UI_FONT, 10))
+                            fg=C["text_secondary"], font=(UI_FONT, fs(10)))
 
         lbl("Da").pack(side="left", padx=(0, 4))
         self._date_from = self._date_widget(row)
@@ -1332,11 +1785,11 @@ class FilterBar(tk.Frame):
 
         apply_btn = _Btn(row, "  Applica  ", on_apply,
                          bg=C["accent"], fg="#ffffff",
-                         font_args=(UI_FONT, 10, "bold"))
+                         font_args=(UI_FONT, fs(10), "bold"))
         apply_btn.pack(side="left", padx=4)
 
         reset_lbl = tk.Label(row, text="Reset", bg=C["surface"],
-                             fg=C["text_secondary"], font=(UI_FONT, 10),
+                             fg=C["text_secondary"], font=(UI_FONT, fs(10)),
                              cursor="hand2")
         reset_lbl.pack(side="left", padx=(2, 0))
         reset_lbl.bind("<Button-1>", lambda _: on_reset())
@@ -1344,7 +1797,7 @@ class FilterBar(tk.Frame):
         # ── RIGHT: 📊 Grafico ──
         self._chart_btn = tk.Label(
             row, text="📊  Grafico", bg=C["surface"], fg=self._DIM_FG,
-            font=(UI_FONT, 10), padx=10, pady=5)
+            font=(UI_FONT, fs(10)), padx=10, pady=5)
         self._chart_btn.pack(side="right", padx=(0, 4))
         self._chart_btn.bind("<Button-1>", lambda _: self._chart_clicked())
 
@@ -1399,11 +1852,11 @@ class FilterBar(tk.Frame):
                            normalforeground=C["text_primary"],
                            weekendbackground=C["surface"],
                            weekendforeground=C["text_secondary"],
-                           font=(UI_FONT, 9))
+                           font=(UI_FONT, fs(9)))
             return de
         e = tk.Entry(parent, width=11, bg=C["surface_elevated"],
                      fg=C["text_primary"], insertbackground=C["text_primary"],
-                     relief="flat", font=(UI_FONT, 9),
+                     relief="flat", font=(UI_FONT, fs(9)),
                      highlightthickness=1, highlightcolor=C["border"],
                      highlightbackground=C["border"])
         e.insert(0, "GG/MM/AAAA")
@@ -1474,7 +1927,7 @@ class ColumnMappingDialog(tk.Toplevel):
 
         tk.Label(self, text="Associa le colonne Excel ai campi richiesti:",
                  bg=C["bg"], fg=C["text_primary"],
-                 font=(UI_FONT, 10)).pack(pady=(18, 8), padx=24)
+                 font=(UI_FONT, fs(10))).pack(pady=(18, 8), padx=24)
 
         form = tk.Frame(self, bg=C["bg"])
         form.pack(padx=24, pady=4)
@@ -1494,7 +1947,7 @@ class ColumnMappingDialog(tk.Toplevel):
         for row_i, (role, (label, required)) in enumerate(self._ROLES.items()):
             txt = label if required else label + " (opzionale)"
             tk.Label(form, text=txt, bg=C["bg"], fg=C["text_primary"],
-                     font=(UI_FONT, 9), anchor="w",
+                     font=(UI_FONT, fs(9)), anchor="w",
                      width=28).grid(row=row_i, column=0, sticky="w",
                                     pady=5, padx=(0, 14))
             cb = ttk.Combobox(form, values=choices, state="readonly",
@@ -1550,7 +2003,7 @@ class DownloadDialog(tk.Toplevel):
 
         tk.Label(self, text="Download aggiornamento…",
                  bg=C["bg"], fg=C["text_primary"],
-                 font=(UI_FONT, 10)).pack(pady=(22, 8))
+                 font=(UI_FONT, fs(10))).pack(pady=(22, 8))
 
         style = ttk.Style()
         style.configure("D.Horizontal.TProgressbar",
@@ -1562,7 +2015,7 @@ class DownloadDialog(tk.Toplevel):
         self._pb.pack(pady=4, padx=20)
 
         self._lbl = tk.Label(self, text="", bg=C["bg"],
-                             fg=C["text_secondary"], font=(UI_FONT, 9))
+                             fg=C["text_secondary"], font=(UI_FONT, fs(9)))
         self._lbl.pack()
 
     def _center(self, parent) -> None:
@@ -1667,7 +2120,7 @@ class BaseView(tk.Frame):
         outer = tk.Frame(self._chart, bg=C["chart_bg"])
         outer.pack(expand=True)
         tk.Label(outer, text=msg, bg=C["chart_bg"],
-                 fg=C["text_secondary"], font=(UI_FONT, 12),
+                 fg=C["text_secondary"], font=(UI_FONT, fs(12)),
                  wraplength=360, justify="center").pack(pady=60)
 
     def _draw_done(self) -> None:
@@ -1701,175 +2154,145 @@ class BaseView(tk.Frame):
 
     # ── Hover tooltip helpers ─────────────────────────────────────────────────
 
-    def _make_annot(self, ax):
-        """Styled hover annotation matching the dark theme."""
-        ann = ax.annotate(
-            "", xy=(0, 0), xytext=(14, 14),
-            textcoords="offset points",
-            bbox=dict(boxstyle="round,pad=0.55",
-                      facecolor=C["surface_elevated"],
-                      edgecolor=C["border"],
-                      linewidth=1, alpha=0.96),
-            fontsize=10, color=C["text_primary"],
-            fontfamily=MONO_FONT, zorder=10,
-        )
-        ann.set_visible(False)
-        return ann
+    # ── Hover tooltip helpers (tkinter overlay — stays inside the window) ────────
+
+    def _get_tip(self) -> _HoverTip:
+        """Return the shared _HoverTip for the root window, creating it if needed."""
+        root = self.app
+        if not hasattr(root, "_hover_tip"):
+            root._hover_tip = _HoverTip(root)
+        return root._hover_tip
+
+    def _tip_pos(self, event) -> Tuple[int, int]:
+        """Convert a matplotlib MouseEvent to root-window (x, y) in tkinter pixels."""
+        root = self.app
+        try:
+            ge = event.guiEvent
+            if ge is not None:
+                return (int(ge.x_root) - root.winfo_rootx(),
+                        int(ge.y_root) - root.winfo_rooty())
+        except Exception:
+            pass
+        # Fallback: convert matplotlib display coords (origin bottom-left of canvas)
+        try:
+            cv = self._canvas.get_tk_widget()
+            cx = cv.winfo_rootx() - root.winfo_rootx()
+            cy = cv.winfo_rooty() - root.winfo_rooty()
+            return (cx + int(event.x), cy + cv.winfo_height() - int(event.y))
+        except Exception:
+            return (200, 200)
 
     def _hover_line(self, ax, x_labels: list, ys, extra: Optional[Dict] = None):
-        """
-        Attach hover to a line/area chart.
-        Snaps to the nearest plotted point on ax.lines[0].
-        extra: optional {label: ys_array} for additional series (e.g. Qty axis).
-        """
-        annot  = self._make_annot(ax)
+        """Hover for line/area — snaps to nearest point on ax.lines[0]."""
         canvas = self._canvas
         ys_f   = np.asarray(ys, dtype=float)
         n      = len(ys_f)
 
         def on_move(event):
+            tip = self._get_tip()
             if event.inaxes is not ax:
-                if annot.get_visible():
-                    annot.set_visible(False); canvas.draw_idle()
-                return
+                tip.hide(); return
             xd = event.xdata
             if xd is None or not ax.lines:
-                return
-            # Compare against the line's own x data (date floats or ints)
+                tip.hide(); return
             line_xs = ax.lines[0].get_xdata()
-            if len(line_xs) == 0:
+            if not len(line_xs):
                 return
-            idx = int(np.argmin(np.abs(np.asarray(line_xs, dtype=float) - xd)))
+            idx = int(np.argmin(np.abs(np.asarray(line_xs, float) - xd)))
             idx = max(0, min(n - 1, idx))
-            xv, yv = line_xs[idx], ys_f[idx]
-            parts = [str(x_labels[idx]), f"€{yv:,.0f}"]
+            parts = [str(x_labels[idx]), f"€{ys_f[idx]:,.0f}"]
             if extra:
                 for name, ey in extra.items():
-                    ef = np.asarray(ey, dtype=float)
+                    ef = np.asarray(ey, float)
                     if idx < len(ef):
                         parts.append(f"{name}: {ef[idx]:,.0f}")
-            annot.set_text("\n".join(parts))
-            annot.xy = (xv, yv)
-            xlim = ax.get_xlim(); ylim = ax.get_ylim()
-            xf = (float(xv) - xlim[0]) / max(xlim[1] - xlim[0], 1e-9)
-            yf = (yv - ylim[0]) / max(ylim[1] - ylim[0], 1e-9)
-            annot.xytext = (-100 if xf > 0.75 else 14,
-                            -40  if yf > 0.80 else 14)
-            annot.set_visible(True); canvas.draw_idle()
+            tip.show(*self._tip_pos(event), "\n".join(parts))
 
         canvas.mpl_connect("motion_notify_event", on_move)
+        canvas.mpl_connect("figure_leave_event", lambda _: self._get_tip().hide())
 
     def _hover_multi_lines(self, ax, x_labels: list, year_vals: dict):
-        """Hover for YoY multi-line chart. Shows all years' values at nearest month."""
-        annot  = self._make_annot(ax)
+        """Hover for YoY multi-line — shows all years at the nearest month."""
         canvas = self._canvas
         n      = len(x_labels)
 
         def on_move(event):
+            tip = self._get_tip()
             if event.inaxes is not ax:
-                if annot.get_visible():
-                    annot.set_visible(False); canvas.draw_idle()
-                return
+                tip.hide(); return
             xd = event.xdata
             if xd is None:
                 return
-            idx = max(0, min(n - 1, int(round(xd))))
+            idx   = max(0, min(n - 1, int(round(xd))))
             parts = [x_labels[idx]]
             for yr, vals in year_vals.items():
                 if idx < len(vals):
                     parts.append(f"{yr}: €{float(vals[idx]):,.0f}")
-            annot.set_text("\n".join(parts))
-            annot.xy = (idx, event.ydata or 0)
-            xlim = ax.get_xlim()
-            xf = (idx - xlim[0]) / max(xlim[1] - xlim[0], 1e-9)
-            annot.xytext = (-120 if xf > 0.72 else 14, 14)
-            annot.set_visible(True); canvas.draw_idle()
+            tip.show(*self._tip_pos(event), "\n".join(parts))
 
         canvas.mpl_connect("motion_notify_event", on_move)
+        canvas.mpl_connect("figure_leave_event", lambda _: self._get_tip().hide())
 
     def _hover_bars_v(self, ax, all_bars: list, all_labels: list, all_vals: list):
-        """
-        Hover for vertical bar charts.
-        all_bars/all_labels/all_vals are flat lists with one entry per bar.
-        """
-        annot   = self._make_annot(ax)
+        """Hover for vertical bar charts."""
         canvas  = self._canvas
         triples = list(zip(all_bars, all_labels, all_vals))
 
         def on_move(event):
+            tip = self._get_tip()
             if event.inaxes is not ax:
-                if annot.get_visible():
-                    annot.set_visible(False); canvas.draw_idle()
-                return
+                tip.hide(); return
             for b, lbl, val in triples:
                 if b.contains(event)[0]:
-                    cx = b.get_x() + b.get_width() / 2
-                    cy = b.get_height()
-                    annot.set_text(f"{lbl}\n€{float(val):,.0f}")
-                    annot.xy = (cx, cy)
-                    xlim = ax.get_xlim(); ylim = ax.get_ylim()
-                    xf = (cx - xlim[0]) / max(xlim[1] - xlim[0], 1e-9)
-                    yf = (cy - ylim[0]) / max(ylim[1] - ylim[0], 1e-9)
-                    annot.xytext = (-100 if xf > 0.75 else 14,
-                                    -40  if yf > 0.85 else 8)
-                    annot.set_visible(True); canvas.draw_idle()
+                    tip.show(*self._tip_pos(event),
+                             f"{lbl}\n€{float(val):,.0f}")
                     return
-            if annot.get_visible():
-                annot.set_visible(False); canvas.draw_idle()
+            tip.hide()
 
         canvas.mpl_connect("motion_notify_event", on_move)
+        canvas.mpl_connect("figure_leave_event", lambda _: self._get_tip().hide())
 
     def _hover_bars_h(self, ax, bars, labels: list, vals):
         """Hover for horizontal bar charts."""
-        annot   = self._make_annot(ax)
         canvas  = self._canvas
         triples = list(zip(bars, labels, vals))
 
         def on_move(event):
+            tip = self._get_tip()
             if event.inaxes is not ax:
-                if annot.get_visible():
-                    annot.set_visible(False); canvas.draw_idle()
-                return
+                tip.hide(); return
             for b, lbl, val in triples:
                 if b.contains(event)[0]:
-                    cx = b.get_width()
-                    cy = b.get_y() + b.get_height() / 2
-                    annot.set_text(f"{lbl}\n€{float(val):,.0f}")
-                    annot.xy = (cx, cy)
-                    xlim = ax.get_xlim()
-                    xf = (cx - xlim[0]) / max(xlim[1] - xlim[0], 1e-9)
-                    annot.xytext = (-120 if xf > 0.75 else 12, -8)
-                    annot.set_visible(True); canvas.draw_idle()
+                    tip.show(*self._tip_pos(event),
+                             f"{lbl}\n€{float(val):,.0f}")
                     return
-            if annot.get_visible():
-                annot.set_visible(False); canvas.draw_idle()
+            tip.hide()
 
         canvas.mpl_connect("motion_notify_event", on_move)
+        canvas.mpl_connect("figure_leave_event", lambda _: self._get_tip().hide())
 
     def _hover_pie(self, ax, wedges, labels: list, vals):
         """Hover for pie/donut charts."""
-        annot  = self._make_annot(ax)
         canvas = self._canvas
         total  = sum(float(v) for v in vals)
         quads  = list(zip(wedges, labels, vals))
 
         def on_move(event):
+            tip = self._get_tip()
             if event.inaxes is not ax:
-                if annot.get_visible():
-                    annot.set_visible(False); canvas.draw_idle()
+                tip.hide(); return
+            if event.xdata is None or event.ydata is None:
                 return
             for w, lbl, val in quads:
                 if w.contains(event)[0]:
                     pct = float(val) / total * 100 if total else 0
-                    annot.set_text(f"{lbl}\n€{float(val):,.0f}\n{pct:.1f}%")
-                    annot.xy = (event.xdata, event.ydata)
-                    annot.xytext = (14, 14)
-                    annot.set_visible(True); canvas.draw_idle()
+                    tip.show(*self._tip_pos(event),
+                             f"{lbl}\n€{float(val):,.0f}\n{pct:.1f}%")
                     return
-            if annot.get_visible():
-                annot.set_visible(False); canvas.draw_idle()
+            tip.hide()
 
         canvas.mpl_connect("motion_notify_event", on_move)
+        canvas.mpl_connect("figure_leave_event", lambda _: self._get_tip().hide())
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1903,7 +2326,7 @@ class TrendView(BaseView):
             bg=C["bg"], fg=C["text_secondary"],
             selectcolor=C["accent"],
             activebackground=C["bg"], activeforeground=C["text_primary"],
-            font=(UI_FONT, 10), cursor="hand2",
+            font=(UI_FONT, fs(10)), cursor="hand2",
             command=self._redraw,
         ).pack(side="left", padx=16)
 
@@ -2430,9 +2853,9 @@ class PeriodComparisonView(BaseView):
             cell.pack(side="left")
             tk.Label(cell, text=label, bg=C["surface"],
                      fg=C["text_secondary"],
-                     font=(UI_FONT, 9)).pack(anchor="w")
+                     font=(UI_FONT, fs(9))).pack(anchor="w")
             tk.Label(cell, text=val, bg=C["surface"], fg=color,
-                     font=(MONO_FONT, 13, "bold")).pack(anchor="w")
+                     font=(MONO_FONT, fs(13), "bold")).pack(anchor="w")
 
         stat(f"Miglior periodo  {series.idxmax()}",
              f"€{series.max():,.0f}", C["accent_green"])
@@ -2479,19 +2902,19 @@ class GeoMapView(BaseView):
         outer.place(relx=0.5, rely=0.5, anchor="center")
 
         tk.Label(outer, text="🗺️", bg=C["chart_bg"],
-                 font=(UI_FONT, 40)).pack(pady=(0, 10))
+                 font=(UI_FONT, fs(40))).pack(pady=(0, 10))
         tk.Label(outer, text="Nessuna colonna geografica",
                  bg=C["chart_bg"], fg=C["text_primary"],
-                 font=(UI_FONT, 14, "bold")).pack()
+                 font=(UI_FONT, fs(14), "bold")).pack()
         tk.Label(outer,
                  text="Aggiungi una colonna città o regione al tuo Excel.",
                  bg=C["chart_bg"], fg=C["text_secondary"],
-                 font=(UI_FONT, 11)).pack(pady=(4, 12))
+                 font=(UI_FONT, fs(11))).pack(pady=(4, 12))
         detail = ("Nomi colonna riconosciuti:\n"
                   "  città · city · regione · region · provincia")
         tk.Label(outer, text=detail,
                  bg=C["surface"], fg=C["text_secondary"],
-                 font=(UI_FONT, 10), justify="left",
+                 font=(UI_FONT, fs(10)), justify="left",
                  padx=14, pady=10).pack()
 
     def _draw(self, df: pd.DataFrame, mapping: Dict, geo_col: str) -> None:
@@ -2569,11 +2992,10 @@ class SalesAnalyzerApp(tk.Tk):
     def __init__(self):
         super().__init__()
         _detect_fonts()     # must run after Tk() init
+        self._init_scale()  # sets _SF, updates _NAV_ITEM_H/_NAV_TOP, geometry
 
         self.title(f"Sales Analyzer v{APP_VERSION}")
         self.configure(bg=C["bg"])
-        self.minsize(1060, 680)
-        self.geometry("1300x820")
         try:
             self.iconbitmap(str(BASE_DIR / "icon.ico"))
         except Exception:
@@ -2600,6 +3022,34 @@ class SalesAnalyzerApp(tk.Tk):
 
         self._build_layout()
         self._check_updates_bg()
+
+    # ── Display scaling ───────────────────────────────────────────────────────
+
+    def _init_scale(self) -> None:
+        """
+        Compute _SF from the logical screen size and apply it globally.
+        Must run before any widget is created (but after Tk.__init__).
+        Baseline design: 1300×820.
+        """
+        global _SF, _NAV_ITEM_H, _NAV_TOP
+
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+
+        # Target window: 88% of screen, capped at 1600×1000
+        tw = min(int(sw * 0.88), 1600)
+        th = min(int(sh * 0.88), 1000)
+
+        # Scale factor relative to design baseline, clamped to [0.75, 1.6]
+        _SF = max(0.75, min(tw / 1300, th / 820, 1.6))
+
+        # Nav sizes
+        _NAV_ITEM_H = max(40, round(52 * _SF))
+        _NAV_TOP    = max(12, round(16 * _SF))
+
+        self.geometry(f"{tw}x{th}")
+        self.minsize(max(800, round(1060 * _SF)),
+                     max(520, round(680  * _SF)))
 
     # ── Layout ────────────────────────────────────────────────────────────────
 
@@ -2653,7 +3103,7 @@ class SalesAnalyzerApp(tk.Tk):
         _Btn(bbar, "  ⬇  Esporta PNG  ",
              command=self._export_current,
              bg=C["surface"], fg=C["text_secondary"],
-             font_args=(UI_FONT, 9), padx=14, pady=6).pack(
+             font_args=(UI_FONT, fs(9)), padx=14, pady=6).pack(
             side="right", padx=12)
 
         # Initial state: drop zone
@@ -2884,10 +3334,10 @@ class SalesAnalyzerApp(tk.Tk):
         qty_d = (total_qty - pq) / pq * 100 if pq > 0 else None
 
         return [
-            ("₿",  "Ricavo Totale", total_rev, rev_d,     "currency"),
-            ("📦", "Unità Vendute", total_qty, qty_d,     "count"),
-            ("⌀",  "Ordine Medio",  avg_order, None,      "currency"),
-            ("📡", "Canale Top",    top_ch,    top_ch_pct,"channel"),
+            ("€",  "Ricavo Totale", total_rev, None,       "currency"),
+            ("📦", "Unità Vendute", total_qty, None,       "count"),
+            ("⌀",  "Ordine Medio",  avg_order, None,       "currency"),
+            ("📡", "Canale Top",    top_ch,    top_ch_pct, "channel"),
         ]
 
     def _update_kpis(self) -> None:
@@ -2919,22 +3369,55 @@ class SalesAnalyzerApp(tk.Tk):
 
     # ── Feature 1: Column config ──────────────────────────────────────────────
 
+    # ── Multi-column mapping normaliser ───────────────────────────────────────
+
+    def _normalize_mapping(self, df: pd.DataFrame,
+                           raw: Dict) -> Dict[str, Optional[str]]:
+        """
+        Convert a raw mapping (which may have lists for revenue/quantity) into
+        a flat dict of single column names, creating a '__combined_*' column
+        in df when multiple source columns are specified.
+        """
+        out: Dict[str, Optional[str]] = {}
+        for role, val in raw.items():
+            if isinstance(val, list):
+                valid = [c for c in val if c and c in df.columns]
+                if not valid:
+                    out[role] = None
+                elif len(valid) == 1:
+                    out[role] = valid[0]
+                else:
+                    cname = f"__combined_{role}"
+                    try:
+                        df[cname] = (df[valid]
+                                     .apply(pd.to_numeric, errors="coerce")
+                                     .sum(axis=1))
+                        out[role] = cname
+                    except Exception:
+                        out[role] = valid[0]
+            else:
+                out[role] = val or None
+        return out
+
     def _open_col_config(self) -> None:
         if self._df_raw is None:
             return
-        dlg = ColumnConfigDialog(self, list(self._df_raw.columns),
-                                  self._mapping, self._mapper)
+        dlg = ExcelColumnPicker(self, self._df_raw, self._mapping, self._mapper)
         self.wait_window(dlg)
         if dlg.result:
-            self._mapping      = dlg.result
-            self._manual_mapping = True
-            # Save mapping keyed by filename
+            raw_result = dlg.result
+            # Persist the raw (possibly multi-column) mapping
             saved = self._cfg.get("column_mapping", {}) or {}
-            saved[self._current_filename] = dlg.result
+            saved[self._current_filename] = raw_result
             self._cfg.set("column_mapping", saved)
+            self._manual_mapping = True
             self._fbar.set_col_badge(True)
+
+            norm = self._normalize_mapping(self._df_raw, raw_result)
+            self._mapping = norm
+
             # Re-coerce types with new mapping
-            date_col = self._mapping.get("date")
+            date_col = norm.get("date")
             if date_col:
                 try:
                     self._df_raw[date_col] = pd.to_datetime(
@@ -2942,21 +3425,23 @@ class SalesAnalyzerApp(tk.Tk):
                 except Exception:
                     pass
             for role in ("revenue", "quantity"):
-                col = self._mapping.get(role)
+                col = norm.get(role)
                 if col and col in self._df_raw.columns:
                     self._df_raw[col] = pd.to_numeric(
                         self._df_raw[col], errors="coerce").fillna(0)
+
             self._df_filtered = self._df_raw.copy()
             self._update_kpis()
             self._views[self._cur_view].refresh(self._df_filtered, self._mapping)
+
         elif dlg.reset_to_auto:
             self._manual_mapping = False
             saved = self._cfg.get("column_mapping", {}) or {}
             saved.pop(self._current_filename, None)
             self._cfg.set("column_mapping", saved)
             self._fbar.set_col_badge(False)
-            # Re-run auto mapping
-            self._mapping = self._mapper.auto_map(list(self._df_raw.columns))
+            auto = self._mapper.auto_map(list(self._df_raw.columns))
+            self._mapping = self._normalize_mapping(self._df_raw, auto)
             self._df_filtered = self._df_raw.copy()
             self._update_kpis()
             self._views[self._cur_view].refresh(self._df_filtered, self._mapping)
