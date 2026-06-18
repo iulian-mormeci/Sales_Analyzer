@@ -19,7 +19,7 @@ from packaging.version import Version
 
 log = logging.getLogger(__name__)
 
-GITHUB_REPO = "YOUR_USERNAME/YOUR_REPO"
+GITHUB_REPO = "iulian-mormeci/Sales_Analyzer"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
