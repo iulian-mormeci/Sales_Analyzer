@@ -43,7 +43,17 @@ def check_for_update(
     def _run():
         try:
             resp = requests.get(GITHUB_API, timeout=8)
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except requests.HTTPError as http_exc:
+                if resp.status_code == 404:
+                    log.info("Nessuna release trovata su GitHub, skip update check.")
+                else:
+                    log.warning(f"Update check HTTP error: {http_exc}")
+                    if on_error:
+                        on_error(str(http_exc))
+                return
+
             data = resp.json()
 
             tag = data.get("tag_name", "")
@@ -66,6 +76,8 @@ def check_for_update(
                         break
 
                 on_update_available(remote_ver, url)
+        except (requests.ConnectionError, requests.Timeout):
+            pass  # No internet — silently ignore
         except Exception as exc:
             log.warning(f"Update check failed: {exc}")
             if on_error:

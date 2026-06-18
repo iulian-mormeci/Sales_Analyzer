@@ -1,0 +1,11 @@
+2026-06-18 21:44:52,629 [WARNING] Update check failed: 404 Client Error: Not Found for url: https://api.github.com/repos/iulian-mormeci/Sales_Analyzer/releases/latest
+2026-06-18 21:44:52,629 [INFO] Update check silently failed: 404 Client Error: Not Found for url: https://api.github.com/repos/iulian-mormeci/Sales_Analyzer/releases/latest
+2026-06-18 22:12:50,414 [INFO] Nessuna release trovata su GitHub, skip update check.
+2026-06-18 22:15:23,772 [INFO] Nessuna release trovata su GitHub, skip update check.
+2026-06-18 22:18:15,190 [INFO] Nessuna release trovata su GitHub, skip update check.
+2026-06-18 22:22:07,268 [INFO] Nessuna release trovata su GitHub, skip update check.
+2026-06-18 22:24:06,048 [INFO] Nessuna release trovata su GitHub, skip update check.
+2026-06-18 22:25:55,060 [INFO] Nessuna release trovata su GitHub, skip update check.
+2026-06-18 22:35:48,028 [INFO] Nessuna release trovata su GitHub, skip update check.
+2026-06-18 22:41:08,251 [INFO] Nessuna release trovata su GitHub, skip update check.
+2026-06-18 22:55:45,000 [INFO] Nessuna release trovata su GitHub, skip update check.

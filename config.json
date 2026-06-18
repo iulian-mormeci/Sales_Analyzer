@@ -1,3 +1,8 @@
 {
-  "test": "ok"
+  "test": "ok",
+  "last_folder": "/Users/iulian.mormeci/progetti/sales_analyzer",
+  "chart_types": {
+    "trend": "bar_v",
+    "top": "pie"
+  }
 }
