@@ -1450,6 +1450,76 @@ class _HoverTip(tk.Frame):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# Channel breakdown strip
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ChannelBreakdown(tk.Frame):
+    """Horizontal strip: one mini-card per selling channel with revenue + share."""
+
+    _COLORS = ["#6c63ff","#43e97b","#38bdf8","#fbbf24",
+               "#fb923c","#f472b6","#e879f9","#34d399"]
+
+    def __init__(self, parent, **kw):
+        super().__init__(parent, bg=C["bg"], **kw)
+        self._large = False
+        self._last: tuple = (None, None, None)
+
+    def set_large(self, large: bool) -> None:
+        self._large = large
+        df, ch_col, rev_col = self._last
+        if df is not None:
+            self.update(df, ch_col, rev_col)
+
+    def update(self, df: "pd.DataFrame",
+               ch_col: Optional[str], rev_col: Optional[str]) -> None:
+        self._last = (df, ch_col, rev_col)
+        for w in self.winfo_children():
+            w.destroy()
+        if not ch_col or not rev_col:
+            return
+        if ch_col not in df.columns or rev_col not in df.columns:
+            return
+        by_ch = (df.groupby(ch_col)[rev_col].sum()
+                   .sort_values(ascending=False))
+        total = float(by_ch.sum()) or 1.0
+
+        # Single card matching the KPICard style
+        card = tk.Frame(self, bg=C["surface"])
+        card.pack(fill="both", expand=True)
+
+        tk.Frame(card, bg=C["accent"], width=3).pack(side="left", fill="y")
+
+        body = tk.Frame(card, bg=C["surface"], padx=14, pady=10)
+        body.pack(side="left", fill="both", expand=True)
+
+        # Header row
+        tk.Label(body, text="◆  Canali di Vendita", bg=C["surface"],
+                 fg=C["text_secondary"],
+                 font=(UI_FONT, fs(11))).pack(anchor="w")
+        tk.Frame(body, bg=C["border"], height=1).pack(fill="x", pady=(sc(5), sc(4)))
+
+        # One compact row per channel — scale up when in large/dashboard mode
+        rf  = fs(12) if self._large else fs(10)
+        rvf = fs(14) if self._large else fs(11)
+        for i, (ch, rev) in enumerate(by_ch.items()):
+            color = self._COLORS[i % len(self._COLORS)]
+            pct   = rev / total * 100
+            row   = tk.Frame(body, bg=C["surface"])
+            row.pack(fill="x", pady=sc(3) if self._large else sc(2))
+            tk.Label(row, text="●", bg=C["surface"], fg=color,
+                     font=(UI_FONT, rf)).pack(side="left")
+            tk.Label(row, text=f"  {ch}", bg=C["surface"],
+                     fg=C["text_secondary"],
+                     font=(UI_FONT, rf)).pack(side="left")
+            tk.Label(row, text=f"{pct:.0f}%",
+                     bg=C["surface"], fg=color,
+                     font=(UI_FONT, rf)).pack(side="right")
+            tk.Label(row, text=f"{_fmt_currency(float(rev))}  ",
+                     bg=C["surface"], fg=C["text_primary"],
+                     font=(MONO_FONT, rvf, "bold")).pack(side="right")
+
+
 # KPI strip
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1461,8 +1531,9 @@ class KPICard(tk.Frame):
         # 3-px left accent border
         tk.Frame(self, bg=C["accent"], width=3).pack(side="left", fill="y")
 
-        body = tk.Frame(self, bg=C["surface"], padx=14, pady=10)
-        body.pack(side="left", fill="both", expand=True)
+        self._body = tk.Frame(self, bg=C["surface"], padx=14, pady=10)
+        self._body.pack(side="left", fill="both", expand=True)
+        body = self._body
 
         # Icon + label row
         top = tk.Frame(body, bg=C["surface"])
@@ -1504,6 +1575,10 @@ class KPICard(tk.Frame):
             self._delta.config(text=delta_str, fg=_dc)
 
         _run_anim(self, 800, _ease_quad, _step, _done)
+
+    def set_large(self, large: bool) -> None:
+        self._val.config(font=(MONO_FONT, fs(22) if large else fs(16), "bold"))
+        self._body.config(pady=sc(18) if large else 10)
 
 
 class KPIStrip(tk.Frame):
@@ -1552,15 +1627,19 @@ class KPIStrip(tk.Frame):
             else:
                 card.animate(value, fmt_fn, dstr, dcol)
 
+    def set_large(self, large: bool) -> None:
+        for card in self._cards:
+            card.set_large(large)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TopBar
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class TopBar(tk.Frame):
-    """48-px top bar: logo | filename  ··  version badge | load button."""
+    """48-px top bar: logo | filename  ··  version badge | add button | load button."""
 
-    def __init__(self, parent, on_load, **kw):
+    def __init__(self, parent, on_load, on_add_file, on_toggle_charts, **kw):
         super().__init__(parent, bg=C["bg"], height=sc(48), **kw)
         self.pack_propagate(False)
         tk.Frame(self, bg=C["border"], height=1).pack(side="bottom", fill="x")
@@ -1593,11 +1672,36 @@ class TopBar(tk.Frame):
                     font_args=(UI_FONT, fs(10), "bold"), padx=14, pady=5)
         load.pack(side="right")
 
+        # Charts toggle button (always visible)
+        self._charts_btn = _Btn(right, "  ▤  Grafici  ", on_toggle_charts,
+                                bg=C["surface"], fg=C["text_secondary"],
+                                font_args=(UI_FONT, fs(10)), padx=14, pady=5)
+        self._charts_btn.pack(side="right", padx=(0, sc(6)))
+
+        # Add-file button (shown only after first file is loaded)
+        self._add_btn = _Btn(right, "  ➕  Aggiungi  ", on_add_file,
+                             bg=C["surface"], fg=C["text_secondary"],
+                             font_args=(UI_FONT, fs(10)), padx=14, pady=5)
+
         self._update_slot: Optional[tk.Widget] = None
 
     def set_filename(self, name: str) -> None:
         sep = "  ·  " if name else ""
         self._file_lbl.config(text=f"{sep}{name}")
+
+    def show_add_button(self, visible: bool) -> None:
+        if visible:
+            self._add_btn.pack(side="right", padx=(0, 6))
+        else:
+            self._add_btn.pack_forget()
+
+    def set_charts_visible(self, visible: bool) -> None:
+        if visible:
+            self._charts_btn.config(bg=C["accent"], fg="#ffffff")
+            self._charts_btn._bg = C["accent"]
+        else:
+            self._charts_btn.config(bg=C["surface"], fg=C["text_secondary"])
+            self._charts_btn._bg = C["surface"]
 
     def show_update_btn(self, version: str, on_download) -> None:
         """Replace / create the update CTA next to version badge."""
@@ -2597,280 +2701,342 @@ class TopProductsView(BaseView):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class PeriodComparisonView(BaseView):
+    """Manual period comparison: choose two specific days, months, or years."""
     VIEW_TITLE    = "Confronto Periodi"
     VIEW_KEY      = "comparison"
     DEFAULT_CHART = "bar_v"
 
+    _MONTHS = ["Gen","Feb","Mar","Apr","Mag","Giu",
+               "Lug","Ago","Set","Ott","Nov","Dic"]
+
     def __init__(self, parent, app):
         super().__init__(parent, app)
         self._chart_type = "bar_v"
-        self._df: Optional[pd.DataFrame] = None
-        self._mapping: Optional[Dict] = None
-        self._stats_bar: Optional[tk.Frame] = None
+        self._df:        Optional[pd.DataFrame] = None
+        self._mapping:   Optional[Dict]         = None
+        self._stats_bar: Optional[tk.Frame]     = None
+        self._mode       = "anno"           # "anno" | "mese" | "giorno"
+        self._mode_btns: Dict[str, tk.Label] = {}
+        self._pf:        Optional[tk.Frame]  = None   # picker sub-frame
 
-        self._mode_pill = PillGroup(
-            self._ctrl, ["YoY","MoM"],
-            initial="YoY", callback=self._on_mode, bg=C["bg"])
-        self._mode_pill.pack(side="left")
+        # ── Mode buttons ──────────────────────────────────────────────────────
+        for mode, lbl in [("anno","Anno"), ("mese","Mese"), ("giorno","Giorno")]:
+            b = tk.Label(self._ctrl, text=lbl,
+                         bg=C["surface"], fg=C["text_secondary"],
+                         font=(UI_FONT, fs(9)), padx=sc(10), pady=sc(3),
+                         cursor="hand2")
+            b.pack(side="left", padx=2)
+            b.bind("<Button-1>", lambda _, m=mode: self._set_mode(m))
+            self._mode_btns[mode] = b
 
-    def _on_mode(self, _: str) -> None:
-        if self._df is not None:
-            self._draw_dispatch()
+        tk.Frame(self._ctrl, bg=C["border"], width=1).pack(
+            side="left", fill="y", pady=4, padx=(sc(10), 0))
+
+        # Picker sub-frame (rebuilt on mode change)
+        self._pf = tk.Frame(self._ctrl, bg=C["bg"])
+        self._pf.pack(side="left", fill="y")
+
+        self._set_mode("anno")
+
+    # ── Mode ──────────────────────────────────────────────────────────────────
+
+    def _set_mode(self, mode: str) -> None:
+        self._mode = mode
+        for m, b in self._mode_btns.items():
+            b.config(bg=(C["accent"] if m == mode else C["surface"]),
+                     fg=("#ffffff"  if m == mode else C["text_secondary"]))
+        self._rebuild_pickers()
+
+    # ── Pickers ───────────────────────────────────────────────────────────────
+
+    def _combo(self, parent, values, default="", width=7):
+        sty = ttk.Style()
+        sty.configure("Cmp.TCombobox",
+                      fieldbackground=C["surface"],
+                      background=C["surface"],
+                      foreground=C["text_primary"],
+                      arrowcolor=C["text_secondary"],
+                      selectbackground=C["accent"],
+                      selectforeground="#ffffff")
+        cb = ttk.Combobox(parent, values=values, width=width,
+                          state="readonly", style="Cmp.TCombobox",
+                          font=(UI_FONT, fs(9)))
+        cb.set(default)
+        return cb
+
+    def _rebuild_pickers(self) -> None:
+        if self._pf is None:
+            return
+        for w in self._pf.winfo_children():
+            w.destroy()
+
+        # Collect available years / dates from data
+        years: List[str] = []
+        dates: List[str] = []
+        if self._df is not None and self._mapping:
+            dc = self._mapping.get("date")
+            if dc and dc in self._df.columns:
+                years = [str(y) for y in
+                         sorted(self._df[dc].dt.year.unique(), reverse=True)]
+                dates = [str(d) for d in
+                         sorted(self._df[dc].dt.date.unique())]
+
+        month_opts = [f"{i:02d} – {self._MONTHS[i-1]}" for i in range(1, 13)]
+
+        def lbl(text):
+            tk.Label(self._pf, text=text, bg=C["bg"],
+                     fg=C["text_secondary"],
+                     font=(UI_FONT, fs(9))).pack(side="left", padx=(sc(6), 2))
+
+        lbl("A :")
+        if self._mode == "anno":
+            self._ya = self._combo(self._pf, years,
+                                   years[0] if years else "", width=6)
+            self._ya.pack(side="left", padx=2)
+        elif self._mode == "mese":
+            self._ya = self._combo(self._pf, years,
+                                   years[0] if years else "", width=6)
+            self._ya.pack(side="left", padx=2)
+            self._ma = self._combo(self._pf, month_opts,
+                                   month_opts[0], width=10)
+            self._ma.pack(side="left", padx=2)
+        else:
+            self._da = self._combo(self._pf, dates,
+                                   dates[0] if dates else "", width=12)
+            self._da.pack(side="left", padx=2)
+
+        tk.Label(self._pf, text="  vs  ", bg=C["bg"],
+                 fg=C["text_secondary"],
+                 font=(UI_FONT, fs(10), "bold")).pack(side="left")
+
+        lbl("B :")
+        if self._mode == "anno":
+            self._yb = self._combo(self._pf, years,
+                                   years[1] if len(years) > 1 else (years[0] if years else ""),
+                                   width=6)
+            self._yb.pack(side="left", padx=2)
+        elif self._mode == "mese":
+            self._yb = self._combo(self._pf, years,
+                                   years[0] if years else "", width=6)
+            self._yb.pack(side="left", padx=2)
+            self._mb = self._combo(self._pf, month_opts,
+                                   month_opts[1] if len(month_opts) > 1 else month_opts[0],
+                                   width=10)
+            self._mb.pack(side="left", padx=2)
+        else:
+            self._db = self._combo(self._pf, dates,
+                                   dates[1] if len(dates) > 1 else (dates[0] if dates else ""),
+                                   width=12)
+            self._db.pack(side="left", padx=2)
+
+        _Btn(self._pf, "  Confronta  ", self._draw_dispatch,
+             bg=C["accent"], fg="#ffffff",
+             font_args=(UI_FONT, fs(9), "bold"),
+             padx=sc(12), pady=sc(3)).pack(side="left", padx=(sc(14), 0))
+
+    # ── Refresh ───────────────────────────────────────────────────────────────
+
+    def refresh(self, df: pd.DataFrame, mapping: Dict) -> None:
+        self._df      = df
+        self._mapping = mapping
+        self._rebuild_pickers()
+        self._draw_dispatch()
 
     def refresh_current(self) -> None:
         if self._df is not None:
             self._draw_dispatch()
 
-    def refresh(self, df: pd.DataFrame, mapping: Dict) -> None:
-        self._df      = df
-        self._mapping = mapping
-        self._draw_dispatch()
+    # ── Drawing ───────────────────────────────────────────────────────────────
 
     def _draw_dispatch(self) -> None:
-        if self._stats_bar:
+        if self._stats_bar and self._stats_bar.winfo_exists():
             self._stats_bar.destroy()
-            self._stats_bar = None
+        self._stats_bar = None
         self._clear()
-        if self._df is None or self._df.empty:
-            self._empty("Nessun dato da visualizzare.")
+        if self._df is None or self._df.empty or self._mapping is None:
+            self._empty("Carica un file per iniziare il confronto.")
             return
-        dc = self._mapping["date"]
-        rc = self._mapping["revenue"]
-        mode = self._mode_pill.get()
-        ct   = self._chart_type
-        if mode == "YoY":
-            if ct == "line":
-                self._draw_yoy_line(self._df, dc, rc)
-            else:
-                self._draw_yoy(self._df, dc, rc)
+        try:
+            {"anno": self._draw_anno,
+             "mese": self._draw_mese,
+             "giorno": self._draw_giorno}[self._mode]()
+        except Exception as exc:
+            self._empty(f"Errore: {exc}")
+
+    def _draw_anno(self) -> None:
+        ya_s = getattr(self, "_ya", None)
+        yb_s = getattr(self, "_yb", None)
+        if ya_s is None or not ya_s.get() or yb_s is None or not yb_s.get():
+            self._empty("Seleziona due anni da confrontare."); return
+        ya, yb = int(ya_s.get()), int(yb_s.get())
+        dc, rc = self._mapping["date"], self._mapping["revenue"]
+        df = self._df.copy()
+        df["_y"] = df[dc].dt.year
+        df["_m"] = df[dc].dt.month
+
+        def mv(year):
+            g = df[df["_y"] == year].groupby("_m")[rc].sum()
+            return [float(g.get(m, 0.0)) for m in range(1, 13)]
+
+        va, vb = mv(ya), mv(yb)
+        bw, xs = 0.35, np.arange(12)
+        fig, ax = self._make_fig(figsize=(12, 4))
+        self._style(ax)
+        ax.grid(axis="y"); ax.grid(axis="x", visible=False)
+        ba = ax.bar(xs - bw/2, va, bw, color=C["accent"],
+                    label=str(ya), alpha=0.9)
+        bb = ax.bar(xs + bw/2, vb, bw, color=C["accent_green"],
+                    label=str(yb), alpha=0.9)
+        ax.set_xticks(xs)
+        ax.set_xticklabels(self._MONTHS, color=C["text_secondary"])
+        ax.set_title(f"Anno  {ya}  vs  {yb}", pad=12)
+        ax.yaxis.set_major_formatter(
+            mticker.FuncFormatter(lambda x, _: f"€{x:,.0f}"))
+        ax.legend(framealpha=0, labelcolor=C["text_secondary"], fontsize=10)
+        fig.tight_layout()
+        lbla = [f"{self._MONTHS[i]} {ya}" for i in range(12)]
+        lblb = [f"{self._MONTHS[i]} {yb}" for i in range(12)]
+        self._hover_bars_v(ax, list(ba)+list(bb), lbla+lblb, va+vb)
+        self._draw_done()
+        self._render_cmp_stats(str(ya), sum(va), str(yb), sum(vb))
+
+    def _draw_mese(self) -> None:
+        ya_w = getattr(self, "_ya", None)
+        yb_w = getattr(self, "_yb", None)
+        ma_w = getattr(self, "_ma", None)
+        mb_w = getattr(self, "_mb", None)
+        if not all(w and w.get() for w in (ya_w, yb_w, ma_w, mb_w)):
+            self._empty("Seleziona anno e mese per i due periodi."); return
+        ya, yb = int(ya_w.get()), int(yb_w.get())
+        ma = int(ma_w.get().split("–")[0].strip())
+        mb = int(mb_w.get().split("–")[0].strip())
+        dc, rc = self._mapping["date"], self._mapping["revenue"]
+        df = self._df.copy()
+        df["_y"] = df[dc].dt.year
+        df["_m"] = df[dc].dt.month
+        df["_d"] = df[dc].dt.day
+
+        def dv(year, month):
+            g = df[(df["_y"] == year) & (df["_m"] == month)].groupby("_d")[rc].sum()
+            return [float(g.get(d, 0.0)) for d in range(1, 32)]
+
+        va, vb = dv(ya, ma), dv(yb, mb)
+        # Trim trailing zero pairs
+        last = 31
+        while last > 1 and va[last-1] == 0 and vb[last-1] == 0:
+            last -= 1
+        va, vb = va[:last], vb[:last]
+        days = list(range(1, last+1))
+
+        la = f"{self._MONTHS[ma-1]} {ya}"
+        lb = f"{self._MONTHS[mb-1]} {yb}"
+        bw, xs = 0.35, np.arange(last)
+        fig, ax = self._make_fig(figsize=(12, 4))
+        self._style(ax)
+        ax.grid(axis="y"); ax.grid(axis="x", visible=False)
+        ba = ax.bar(xs - bw/2, va, bw, color=C["accent"],   label=la, alpha=0.9)
+        bb = ax.bar(xs + bw/2, vb, bw, color=C["accent_green"], label=lb, alpha=0.9)
+        ax.set_xticks(xs)
+        ax.set_xticklabels([str(d) for d in days],
+                           color=C["text_secondary"],
+                           fontsize=max(6, fs(7)))
+        ax.set_title(f"Mese  {la}  vs  {lb}", pad=12)
+        ax.yaxis.set_major_formatter(
+            mticker.FuncFormatter(lambda x, _: f"€{x:,.0f}"))
+        ax.legend(framealpha=0, labelcolor=C["text_secondary"], fontsize=10)
+        fig.tight_layout()
+        lbla = [f"Giorno {d} — {la}" for d in days]
+        lblb = [f"Giorno {d} — {lb}" for d in days]
+        self._hover_bars_v(ax, list(ba)+list(bb), lbla+lblb, va+vb)
+        self._draw_done()
+        self._render_cmp_stats(la, sum(va), lb, sum(vb))
+
+    def _draw_giorno(self) -> None:
+        da_w = getattr(self, "_da", None)
+        db_w = getattr(self, "_db", None)
+        if not all(w and w.get() for w in (da_w, db_w)):
+            self._empty("Seleziona due giorni da confrontare."); return
+        try:
+            da = pd.to_datetime(da_w.get()).date()
+            db = pd.to_datetime(db_w.get()).date()
+        except Exception:
+            self._empty("Date non valide."); return
+        dc, rc = self._mapping["date"], self._mapping["revenue"]
+        pc = self._mapping.get("product")
+        df = self._df.copy()
+        df["_date"] = df[dc].dt.date
+        dfa = df[df["_date"] == da]
+        dfb = df[df["_date"] == db]
+
+        if pc and pc in df.columns and not (dfa.empty and dfb.empty):
+            ga = dfa.groupby(pc)[rc].sum()
+            gb = dfb.groupby(pc)[rc].sum()
+            prods = sorted(set(ga.index) | set(gb.index))
+            va = [float(ga.get(p, 0.0)) for p in prods]
+            vb = [float(gb.get(p, 0.0)) for p in prods]
+            labels = prods
+            title = f"Giorno  {da}  vs  {db}  (per prodotto)"
         else:
-            if ct == "line":
-                self._draw_mom_line(self._df, dc, rc)
-            else:
-                self._draw_mom(self._df, dc, rc)
+            va = [float(dfa[rc].sum())]
+            vb = [float(dfb[rc].sum())]
+            labels = ["Totale"]
+            title = f"Giorno  {da}  vs  {db}"
 
-    def _draw_yoy(self, df, date_col, rev_col) -> None:
-        df = df.copy()
-        df["_y"] = df[date_col].dt.year
-        df["_m"] = df[date_col].dt.month
-        pivot = df.groupby(["_y","_m"])[rev_col].sum().unstack(level=0)
-        if pivot.empty:
-            self._empty("Dati insufficienti per YoY.")
-            return
-
-        years  = sorted(pivot.columns)
-        months = list(range(1, 13))
-        mnames = ["Gen","Feb","Mar","Apr","Mag","Giu",
-                  "Lug","Ago","Set","Ott","Nov","Dic"]
-
-        fig, ax = self._make_fig(figsize=(12, 5))
+        bw, xs = 0.35, np.arange(len(labels))
+        fig, ax = self._make_fig(figsize=(12, 4))
         self._style(ax)
         ax.grid(axis="y"); ax.grid(axis="x", visible=False)
-
-        ny    = len(years)
-        bw    = 0.7 / ny
-        xs    = np.arange(len(months))
-
-        yr_colors = [
-            C["text_secondary"] if i < ny - 1 else C["accent"]
-            for i in range(ny)
-        ]
-
-        all_yoy_bars: list = []
-        all_yoy_lbls: list = []
-        all_yoy_vals: list = []
-
-        for i, year in enumerate(years):
-            vals   = [float(pivot.loc[m, year])
-                      if m in pivot.index and year in pivot.columns
-                      else 0.0 for m in months]
-            offset = (i - (ny - 1) / 2) * bw
-            alpha  = 0.4 if i < ny - 1 else 1.0
-            bars   = ax.bar(xs + offset, vals, bw * 0.9,
-                            color=yr_colors[i], alpha=alpha,
-                            label=str(year))
-            for j, (bar, m) in enumerate(zip(bars, months)):
-                all_yoy_bars.append(bar)
-                all_yoy_lbls.append(f"{mnames[j]} {year}")
-                all_yoy_vals.append(vals[j])
-                if i > 0:
-                    prev = years[i - 1]
-                    pv = float(pivot.loc[m, prev]
-                               if m in pivot.index and prev in pivot.columns
-                               else 0)
-                    cv = vals[j]
-                    if pv and cv:
-                        pct = (cv - pv) / pv * 100
-                        col = C["accent_green"] if pct >= 0 else C["accent_warm"]
-                        ax.text(bar.get_x() + bar.get_width() / 2,
-                                bar.get_height() * 1.02,
-                                f"{pct:+.0f}%",
-                                ha="center", va="bottom",
-                                fontsize=6.5, color=col)
-
+        ba = ax.bar(xs - bw/2, va, bw, color=C["accent"],
+                    label=str(da), alpha=0.9)
+        bb = ax.bar(xs + bw/2, vb, bw, color=C["accent_green"],
+                    label=str(db), alpha=0.9)
         ax.set_xticks(xs)
-        ax.set_xticklabels(mnames, color=C["text_secondary"])
-        ax.set_ylabel("Ricavi (€)")
-        ax.set_title("Confronto Anno su Anno (YoY)", pad=14)
+        rot = 30 if len(labels) > 6 else 0
+        ax.set_xticklabels(labels, color=C["text_secondary"],
+                           rotation=rot,
+                           ha="right" if rot else "center",
+                           fontsize=max(7, fs(8)))
+        ax.set_title(title, pad=12)
         ax.yaxis.set_major_formatter(
             mticker.FuncFormatter(lambda x, _: f"€{x:,.0f}"))
         ax.legend(framealpha=0, labelcolor=C["text_secondary"], fontsize=10)
         fig.tight_layout()
-        self._hover_bars_v(ax, all_yoy_bars, all_yoy_lbls, all_yoy_vals)
+        lbla = [f"{l} — {da}" for l in labels]
+        lblb = [f"{l} — {db}" for l in labels]
+        self._hover_bars_v(ax, list(ba)+list(bb), lbla+lblb, va+vb)
         self._draw_done()
-        self._render_stats(df.groupby("_y")[rev_col].sum())
+        self._render_cmp_stats(str(da), sum(va), str(db), sum(vb))
 
-    def _draw_mom(self, df, date_col, rev_col) -> None:
-        df = df.copy()
-        df["_p"] = df[date_col].dt.to_period("M")
-        monthly  = df.groupby("_p")[rev_col].sum().sort_index()
-        if len(monthly) < 2:
-            self._empty("Servono almeno 2 mesi per il confronto MoM.")
-            return
-
-        pct = monthly.pct_change() * 100
-        xs  = np.arange(len(monthly))
-        bar_colors = [
-            (C["accent_green"] if (pct.iloc[i] >= 0) else C["accent_warm"])
-            if i > 0 else C["accent"]
-            for i in range(len(monthly))
-        ]
-
-        fig, ax = self._make_fig(figsize=(12, 5))
-        self._style(ax)
-        ax.grid(axis="y"); ax.grid(axis="x", visible=False)
-
-        bars = ax.bar(xs, monthly.values, color=bar_colors, width=0.6)
-        for i, (bar, _) in enumerate(zip(bars, monthly.values)):
-            if i > 0 and not np.isnan(pct.iloc[i]):
-                col = C["accent_green"] if pct.iloc[i] >= 0 else C["accent_warm"]
-                ax.text(bar.get_x() + bar.get_width() / 2,
-                        bar.get_height() * 1.02,
-                        f"{pct.iloc[i]:+.1f}%",
-                        ha="center", va="bottom",
-                        fontsize=7, color=col)
-
-        labels = [str(p) for p in monthly.index]
-        step   = max(1, len(labels) // 12)
-        ax.set_xticks(xs[::step])
-        ax.set_xticklabels(labels[::step], rotation=40, ha="right",
-                           color=C["text_secondary"], fontsize=9)
-        ax.set_ylabel("Ricavi (€)")
-        ax.set_title("Confronto Mese su Mese (MoM)", pad=14)
-        ax.yaxis.set_major_formatter(
-            mticker.FuncFormatter(lambda x, _: f"€{x:,.0f}"))
-        fig.tight_layout()
-        self._hover_bars_v(ax,
-                           list(bars),
-                           labels,
-                           monthly.values.tolist())
-        self._draw_done()
-        self._render_stats(monthly, pct)
-
-    def _draw_yoy_line(self, df, date_col, rev_col) -> None:
-        df = df.copy()
-        df["_y"] = df[date_col].dt.year
-        df["_m"] = df[date_col].dt.month
-        pivot = df.groupby(["_y","_m"])[rev_col].sum().unstack(level=0)
-        if pivot.empty:
-            self._empty("Dati insufficienti per YoY.")
-            return
-
-        years  = sorted(pivot.columns)
-        months = list(range(1, 13))
-        mnames = ["Gen","Feb","Mar","Apr","Mag","Giu",
-                  "Lug","Ago","Set","Ott","Nov","Dic"]
-        xs = np.arange(len(months))
-
-        fig, ax = self._make_fig(figsize=(12, 5))
-        self._style(ax)
-        ax.grid(axis="y"); ax.grid(axis="x", visible=False)
-
-        year_vals_map: dict = {}
-        for i, year in enumerate(years):
-            vals = [float(pivot.loc[m, year])
-                    if m in pivot.index and year in pivot.columns
-                    else 0.0 for m in months]
-            year_vals_map[str(year)] = vals
-            col   = C["accent"] if i == len(years) - 1 else CHART_COLORS[i % len(CHART_COLORS)]
-            alpha = 1.0 if i == len(years) - 1 else 0.55
-            ax.plot(xs, vals, color=col, linewidth=2.2, alpha=alpha,
-                    marker="o", markersize=4, label=str(year))
-
-        ax.set_xticks(xs)
-        ax.set_xticklabels(mnames, color=C["text_secondary"])
-        ax.set_ylabel("Ricavi (€)")
-        ax.set_title("Confronto Anno su Anno — Linee", pad=14)
-        ax.yaxis.set_major_formatter(
-            mticker.FuncFormatter(lambda x, _: f"€{x:,.0f}"))
-        ax.legend(framealpha=0, labelcolor=C["text_secondary"], fontsize=10)
-        fig.tight_layout()
-        self._hover_multi_lines(ax, mnames, year_vals_map)
-        self._draw_done()
-        self._render_stats(df.groupby("_y")[rev_col].sum())
-
-    def _draw_mom_line(self, df, date_col, rev_col) -> None:
-        df = df.copy()
-        df["_p"] = df[date_col].dt.to_period("M")
-        monthly = df.groupby("_p")[rev_col].sum().sort_index()
-        if len(monthly) < 2:
-            self._empty("Servono almeno 2 mesi per il confronto MoM.")
-            return
-
-        xs = np.arange(len(monthly))
-        pct = monthly.pct_change() * 100
-
-        fig, ax = self._make_fig(figsize=(12, 5))
-        self._style(ax)
-        ax.grid(axis="y"); ax.grid(axis="x", visible=False)
-
-        ax.plot(xs, monthly.values, color=C["accent"], linewidth=2.5,
-                marker="o", markersize=5, label="Ricavi mensili")
-        ax.fill_between(xs, monthly.values, alpha=0.12, color=C["accent"])
-
-        labels = [str(p) for p in monthly.index]
-        step   = max(1, len(labels) // 12)
-        ax.set_xticks(xs[::step])
-        ax.set_xticklabels(labels[::step], rotation=40, ha="right",
-                           color=C["text_secondary"], fontsize=9)
-        ax.set_ylabel("Ricavi (€)")
-        ax.set_title("Andamento Mensile — Linea", pad=14)
-        ax.yaxis.set_major_formatter(
-            mticker.FuncFormatter(lambda x, _: f"€{x:,.0f}"))
-        ax.legend(framealpha=0, labelcolor=C["text_secondary"], fontsize=10)
-        fig.tight_layout()
-        self._hover_line(ax, labels, monthly.values)
-        self._draw_done()
-        self._render_stats(monthly, pct)
-
-    def _render_stats(self, series, pct_changes=None) -> None:
+    def _render_cmp_stats(self, la: str, ta: float,
+                          lb: str, tb: float) -> None:
         bar = tk.Frame(self, bg=C["surface"])
-        bar.pack(fill="x", padx=12, pady=(0, 8))
+        bar.pack(fill="x", padx=12, pady=(0, 6))
         self._stats_bar = bar
+        diff = tb - ta
+        pct  = (diff / ta * 100) if ta else 0.0
+        dc   = C["accent_green"] if diff >= 0 else C["accent_warm"]
 
         def stat(label, val, color):
-            cell = tk.Frame(bar, bg=C["surface"], padx=16, pady=8)
+            cell = tk.Frame(bar, bg=C["surface"], padx=sc(14), pady=sc(6))
             cell.pack(side="left")
             tk.Label(cell, text=label, bg=C["surface"],
                      fg=C["text_secondary"],
                      font=(UI_FONT, fs(9))).pack(anchor="w")
             tk.Label(cell, text=val, bg=C["surface"], fg=color,
-                     font=(MONO_FONT, fs(13), "bold")).pack(anchor="w")
+                     font=(MONO_FONT, fs(12), "bold")).pack(anchor="w")
 
-        stat(f"Miglior periodo  {series.idxmax()}",
-             f"€{series.max():,.0f}", C["accent_green"])
-        tk.Frame(bar, bg=C["border"], width=1).pack(
-            side="left", fill="y", pady=6)
-        stat(f"Peggior periodo  {series.idxmin()}",
-             f"€{series.min():,.0f}", C["accent_warm"])
-        if pct_changes is not None:
-            valid = pct_changes.dropna()
-            if len(valid):
-                avg = valid.mean()
-                tk.Frame(bar, bg=C["border"], width=1).pack(
-                    side="left", fill="y", pady=6)
-                col = C["accent_green"] if avg >= 0 else C["accent_warm"]
-                stat("Crescita media", f"{avg:+.1f}%", col)
+        def sep():
+            tk.Frame(bar, bg=C["border"], width=1).pack(
+                side="left", fill="y", pady=6)
+
+        stat(f"  {la}", _fmt_currency(ta), C["accent"])
+        sep()
+        stat(f"  {lb}", _fmt_currency(tb), C["accent_green"])
+        sep()
+        sign = "+" if diff >= 0 else ""
+        stat("  Differenza", f"{sign}{_fmt_currency(abs(diff))}", dc)
+        sep()
+        stat("  Variazione", f"{pct:+.1f}%", dc)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3055,7 +3221,9 @@ class SalesAnalyzerApp(tk.Tk):
 
     def _build_layout(self) -> None:
         # ── Top bar ───────────────────────────────────────────────────────────
-        self._topbar = TopBar(self, on_load=self._load_excel)
+        self._topbar = TopBar(self, on_load=self._load_excel,
+                              on_add_file=self._add_excel,
+                              on_toggle_charts=self._toggle_charts)
         self._topbar.pack(fill="x")
 
         # ── Body (sidebar + right panel) ──────────────────────────────────────
@@ -3068,11 +3236,29 @@ class SalesAnalyzerApp(tk.Tk):
         self._right = tk.Frame(body, bg=C["bg"])
         self._right.pack(side="left", fill="both", expand=True)
 
-        # KPI strip
-        self._kpi = KPIStrip(self._right)
-        self._kpi.pack(fill="x", padx=12, pady=(10, 0))
+        # ── KPI center (expands to fill when charts are hidden) ──────────────────
+        self._kpi_center = tk.Frame(self._right, bg=C["bg"])
+        # Start with charts visible (drop zone needs chart_wrap packed), so
+        # _kpi_center just fills x now; it will expand after first file load.
+        self._kpi_center.pack(fill="x")
 
-        # Filter bar
+        # Top spacer (used only in dashboard / charts-hidden mode)
+        self._kpi_top_sp = tk.Frame(self._kpi_center, bg=C["bg"])
+
+        # KPI row: channel breakdown + KPI strip side by side
+        self._kpi_row_f = tk.Frame(self._kpi_center, bg=C["bg"])
+        self._kpi_row_f.pack(fill="x", padx=12, pady=(10, 0))
+
+        self._ch_breakdown = ChannelBreakdown(self._kpi_row_f)
+        self._ch_breakdown.pack(side="left", fill="y", padx=(0, sc(8)))
+
+        self._kpi = KPIStrip(self._kpi_row_f)
+        self._kpi.pack(side="left", fill="both", expand=True)
+
+        # Bottom spacer (used only in dashboard / charts-hidden mode)
+        self._kpi_bot_sp = tk.Frame(self._kpi_center, bg=C["bg"])
+
+        # ── Filter bar (hidden by default; shown when charts visible) ──────────
         self._fbar = FilterBar(self._right,
                                on_apply=self._apply_filters,
                                on_reset=self._reset_filters,
@@ -3080,12 +3266,10 @@ class SalesAnalyzerApp(tk.Tk):
                                on_chart_type=self._toggle_chart_panel)
         self._fbar.pack(fill="x", pady=(10, 0))
 
-        # Chart wrapper (views live here)
+        # ── Chart wrapper ──────────────────────────────────────────────────────
         self._chart_wrap = tk.Frame(self._right, bg=C["bg"])
-        self._chart_wrap.pack(fill="both", expand=True,
-                              padx=0, pady=(0, 0))
+        self._chart_wrap.pack(fill="both", expand=True)
 
-        # Build views
         self._views: Dict[str, BaseView] = {
             "trend":      TrendView(self._chart_wrap, self),
             "top":        TopProductsView(self._chart_wrap, self),
@@ -3095,20 +3279,60 @@ class SalesAnalyzerApp(tk.Tk):
         for v in self._views.values():
             v.place(relx=0, rely=0, relwidth=1, relheight=1)
 
-        # Bottom bar: export button
-        bbar = tk.Frame(self._right, bg=C["surface"], height=38)
-        bbar.pack(fill="x")
-        bbar.pack_propagate(False)
-        tk.Frame(bbar, bg=C["border"], height=1).pack(side="top", fill="x")
-        _Btn(bbar, "  ⬇  Esporta PNG  ",
+        # ── Bottom bar ─────────────────────────────────────────────────────────
+        self._bbar = tk.Frame(self._right, bg=C["surface"], height=38)
+        self._bbar.pack(fill="x")
+        self._bbar.pack_propagate(False)
+        tk.Frame(self._bbar, bg=C["border"], height=1).pack(side="top", fill="x")
+        _Btn(self._bbar, "  ⬇  Esporta PNG  ",
              command=self._export_current,
              bg=C["surface"], fg=C["text_secondary"],
              font_args=(UI_FONT, fs(9)), padx=14, pady=6).pack(
             side="right", padx=12)
 
+        # Track visibility state (start with charts visible / normal layout)
+        self._charts_visible = True
+
         # Initial state: drop zone
         self._show_dropzone()
         self._switch_view("trend", animate=False)
+
+    # ── Charts show / hide toggle ─────────────────────────────────────────────
+
+    def _set_charts_visible(self, visible: bool) -> None:
+        if visible == self._charts_visible:
+            return
+        self._charts_visible = visible
+        if visible:
+            # ── Compact mode: KPI at top, filter bar + charts below ────────────
+            self._kpi_top_sp.pack_forget()
+            self._kpi_bot_sp.pack_forget()
+            # Re-pack kpi_row with normal padding
+            self._kpi_row_f.pack_forget()
+            self._kpi_row_f.pack(fill="x", padx=12, pady=(10, 0))
+            self._kpi_center.pack_configure(fill="x", expand=False)
+            self._fbar.pack(fill="x", pady=(10, 0))
+            self._chart_wrap.pack(fill="both", expand=True)
+            self._bbar.pack(fill="x")
+            self._kpi.set_large(False)
+            self._ch_breakdown.set_large(False)
+        else:
+            # ── Dashboard mode: KPI centered, charts hidden ────────────────────
+            self._fbar.pack_forget()
+            self._chart_wrap.pack_forget()
+            self._bbar.pack_forget()
+            # Re-pack kpi_row between spacers for vertical centering
+            self._kpi_row_f.pack_forget()
+            self._kpi_top_sp.pack(fill="both", expand=True)
+            self._kpi_row_f.pack(fill="x", padx=12, pady=sc(20))
+            self._kpi_bot_sp.pack(fill="both", expand=True)
+            self._kpi_center.pack_configure(fill="both", expand=True)
+            self._kpi.set_large(True)
+            self._ch_breakdown.set_large(True)
+        self._topbar.set_charts_visible(visible)
+
+    def _toggle_charts(self) -> None:
+        self._set_charts_visible(not self._charts_visible)
 
     # ── Drop zone / loading states ────────────────────────────────────────────
 
@@ -3141,29 +3365,44 @@ class SalesAnalyzerApp(tk.Tk):
 
     def _load_excel(self) -> None:
         init = self._cfg.get("last_folder", str(Path.home()))
-        path = filedialog.askopenfilename(
-            title="Apri file Excel",
+        paths = filedialog.askopenfilenames(
+            title="Apri file/i Excel",
             initialdir=init,
             filetypes=[("Excel", "*.xlsx *.xls *.xlsm"), ("Tutti", "*.*")],
         )
-        if not path:
+        if not paths:
             return
-        self._cfg.set("last_folder", str(Path(path).parent))
+        self._cfg.set("last_folder", str(Path(paths[0]).parent))
         self._show_loading()
 
         def _load():
             try:
-                df = pd.read_excel(path, engine="openpyxl")
-                self.after(0, lambda: self._on_loaded(df, Path(path).name))
+                dfs = []
+                for p in paths:
+                    d = pd.read_excel(p, engine="openpyxl")
+                    d["__file"] = Path(p).name
+                    dfs.append(d)
+                combined = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0]
+                names = [Path(p).name for p in paths]
+                self.after(0, lambda: self._on_loaded(combined, names))
             except Exception as exc:
                 log.error(f"Excel load error: {exc}")
                 self.after(0, lambda: self._on_load_error(str(exc)))
 
         threading.Thread(target=_load, daemon=True).start()
 
-    def _on_loaded(self, df: pd.DataFrame, filename: str) -> None:
+    def _on_loaded(self, df: pd.DataFrame,
+                   filenames) -> None:
         self._hide_loading()
-        self._current_filename = filename
+        if isinstance(filenames, list):
+            self._all_filenames    = filenames
+            self._current_filename = filenames[0]
+            display_name = (filenames[0] if len(filenames) == 1
+                            else f"{len(filenames)} file caricati")
+        else:
+            self._all_filenames    = [filenames]
+            self._current_filename = filenames
+            display_name           = filenames
 
         # Try to parse date-like object columns
         for col in df.columns:
@@ -3178,7 +3417,7 @@ class SalesAnalyzerApp(tk.Tk):
 
         # Check for a previously saved manual mapping for this filename
         saved_mappings = self._cfg.get("column_mapping", {})
-        saved = saved_mappings.get(filename)
+        saved = saved_mappings.get(self._current_filename)
         if saved and all(saved.get(r) is None or saved.get(r) in columns
                          for r in COLUMN_SYNONYMS):
             mapping = saved
@@ -3210,6 +3449,13 @@ class SalesAnalyzerApp(tk.Tk):
             if col and col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
+        # Fill blank channel cells with "Banco"
+        ch_col = mapping.get("channel")
+        if ch_col and ch_col in df.columns:
+            df[ch_col] = (df[ch_col]
+                          .fillna("Banco")
+                          .apply(lambda x: "Banco" if str(x).strip() == "" else x))
+
         self._df_raw      = df
         self._mapping     = mapping
         self._df_filtered = df.copy()
@@ -3219,11 +3465,10 @@ class SalesAnalyzerApp(tk.Tk):
             if vk in self._views:
                 self._views[vk]._chart_type = ct
 
-        # Populate filter bar
-        ch_col = mapping.get("channel")
+        # Populate filter bar channel dropdown
         if ch_col and ch_col in df.columns:
             self._fbar.channel_dd.set_options(
-                df[ch_col].dropna().unique().tolist())
+                sorted(df[ch_col].unique().tolist()))
 
         dmin = df[date_col].min().date()
         dmax = df[date_col].max().date()
@@ -3233,11 +3478,15 @@ class SalesAnalyzerApp(tk.Tk):
         self._fbar.set_buttons_enabled(True)
         self._fbar.set_col_badge(self._manual_mapping)
 
-        self.title(f"Sales Analyzer v{APP_VERSION} — {filename}")
-        self._topbar.set_filename(filename)
+        self.title(f"Sales Analyzer v{APP_VERSION} — {display_name}")
+        self._topbar.set_filename(display_name)
+        self._topbar.show_add_button(True)
 
+        self._ch_breakdown.update(df, ch_col, mapping.get("revenue"))
         self._update_kpis()
         self._switch_view(self._cur_view, animate=False)
+        # After loading, switch to dashboard mode (charts hidden, big KPIs)
+        self._set_charts_visible(False)
 
     def _on_load_error(self, msg: str) -> None:
         self._hide_loading()
@@ -3248,6 +3497,93 @@ class SalesAnalyzerApp(tk.Tk):
             "Verifica:\n"
             "  • File .xlsx valido e non aperto in Excel\n"
             "  • Almeno una colonna data, una prodotto, una ricavo")
+
+    def _add_excel(self) -> None:
+        """Add one or more extra Excel files to the current dataset."""
+        if self._df_raw is None:
+            return
+        init = self._cfg.get("last_folder", str(Path.home()))
+        paths = filedialog.askopenfilenames(
+            title="Aggiungi file/i Excel",
+            initialdir=init,
+            filetypes=[("Excel", "*.xlsx *.xls *.xlsm"), ("Tutti", "*.*")],
+        )
+        if not paths:
+            return
+        self._show_loading()
+
+        existing   = self._df_raw.copy()
+        mapping    = self._mapping.copy()
+        date_col   = mapping.get("date")
+        ch_col     = mapping.get("channel")
+
+        def _load():
+            try:
+                dfs = [existing]
+                for p in paths:
+                    d = pd.read_excel(p, engine="openpyxl")
+                    d["__file"] = Path(p).name
+                    # Parse dates
+                    if date_col and date_col in d.columns:
+                        try:
+                            d[date_col] = pd.to_datetime(
+                                d[date_col], dayfirst=True)
+                        except Exception:
+                            pass
+                    # Coerce numeric columns
+                    for role in ("revenue", "quantity"):
+                        col = mapping.get(role)
+                        if col and col in d.columns:
+                            d[col] = pd.to_numeric(
+                                d[col], errors="coerce").fillna(0)
+                    # Fill blank channel
+                    if ch_col and ch_col in d.columns:
+                        d[ch_col] = (d[ch_col]
+                                     .fillna("Banco")
+                                     .apply(lambda x: "Banco"
+                                            if str(x).strip() == "" else x))
+                    dfs.append(d)
+                combined   = pd.concat(dfs, ignore_index=True)
+                new_names  = [Path(p).name for p in paths]
+                self.after(0, lambda: self._on_files_added(combined, new_names))
+            except Exception as exc:
+                log.error(f"Excel add error: {exc}")
+                self.after(0, lambda: self._on_load_error(str(exc)))
+
+        threading.Thread(target=_load, daemon=True).start()
+
+    def _on_files_added(self, df: pd.DataFrame,
+                        new_names: List[str]) -> None:
+        self._hide_loading()
+        self._all_filenames = getattr(self, "_all_filenames",
+                                      [self._current_filename]) + new_names
+        total = len(self._all_filenames)
+        display_name = f"{total} file caricati"
+
+        self._df_raw      = df
+        self._df_filtered = df.copy()
+
+        # Refresh channel dropdown
+        ch_col = self._mapping.get("channel")
+        if ch_col and ch_col in df.columns:
+            self._fbar.channel_dd.set_options(
+                sorted(df[ch_col].unique().tolist()))
+
+        # Expand date range
+        date_col = self._mapping.get("date")
+        if date_col and date_col in df.columns:
+            dmin = df[date_col].min().date()
+            dmax = df[date_col].max().date()
+            self._fbar.set_date(self._fbar.date_from, dmin)
+            self._fbar.set_date(self._fbar.date_to,   dmax)
+
+        self.title(f"Sales Analyzer v{APP_VERSION} — {display_name}")
+        self._topbar.set_filename(display_name)
+
+        self._ch_breakdown.update(df, self._mapping.get("channel"),
+                                  self._mapping.get("revenue"))
+        self._update_kpis()
+        self._views[self._cur_view].refresh(self._df_filtered, self._mapping)
 
     # ── Filters ───────────────────────────────────────────────────────────────
 
@@ -3277,6 +3613,8 @@ class SalesAnalyzerApp(tk.Tk):
             return
 
         self._df_filtered = df
+        self._ch_breakdown.update(df, self._mapping.get("channel"),
+                                  self._mapping.get("revenue"))
         self._update_kpis()
         self._views[self._cur_view].refresh(df, self._mapping)
 
@@ -3293,6 +3631,9 @@ class SalesAnalyzerApp(tk.Tk):
         if ch_col:
             self._fbar.channel_dd.set_options(
                 self._df_raw[ch_col].dropna().unique().tolist())
+        self._ch_breakdown.update(self._df_filtered,
+                                  self._mapping.get("channel"),
+                                  self._mapping.get("revenue"))
         self._update_kpis()
         self._views[self._cur_view].refresh(self._df_filtered, self._mapping)
 
@@ -3430,6 +3771,16 @@ class SalesAnalyzerApp(tk.Tk):
                     self._df_raw[col] = pd.to_numeric(
                         self._df_raw[col], errors="coerce").fillna(0)
 
+            # Fill blank channel cells with "Banco"
+            ch_col = norm.get("channel")
+            if ch_col and ch_col in self._df_raw.columns:
+                self._df_raw[ch_col] = (self._df_raw[ch_col]
+                                        .fillna("Banco")
+                                        .apply(lambda x: "Banco"
+                                               if str(x).strip() == "" else x))
+                self._fbar.channel_dd.set_options(
+                    sorted(self._df_raw[ch_col].unique().tolist()))
+
             self._df_filtered = self._df_raw.copy()
             self._update_kpis()
             self._views[self._cur_view].refresh(self._df_filtered, self._mapping)
@@ -3442,6 +3793,15 @@ class SalesAnalyzerApp(tk.Tk):
             self._fbar.set_col_badge(False)
             auto = self._mapper.auto_map(list(self._df_raw.columns))
             self._mapping = self._normalize_mapping(self._df_raw, auto)
+            # Fill blank channel with "Banco" on auto-reset too
+            ch_col = self._mapping.get("channel")
+            if ch_col and ch_col in self._df_raw.columns:
+                self._df_raw[ch_col] = (self._df_raw[ch_col]
+                                        .fillna("Banco")
+                                        .apply(lambda x: "Banco"
+                                               if str(x).strip() == "" else x))
+                self._fbar.channel_dd.set_options(
+                    sorted(self._df_raw[ch_col].unique().tolist()))
             self._df_filtered = self._df_raw.copy()
             self._update_kpis()
             self._views[self._cur_view].refresh(self._df_filtered, self._mapping)

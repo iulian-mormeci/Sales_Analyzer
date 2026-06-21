@@ -3,7 +3,7 @@
   "last_folder": "/Users/iulian.mormeci/progetti/sales_analyzer",
   "chart_types": {
     "trend": "bar_v",
-    "top": "pie"
+    "top": "bar_h"
   },
   "column_mapping": {
     "sample_data.xlsx": {
