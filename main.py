@@ -3556,8 +3556,10 @@ class SalesAnalyzerApp(tk.Tk):
              font_args=(UI_FONT, fs(9)), padx=14, pady=6).pack(
             side="right", padx=12)
 
-        # Track visibility state (start with charts visible / normal layout)
+        # Build layout in "charts visible" state, then immediately switch to
+        # "no charts" so the app opens clean without a flicker on first load.
         self._charts_visible = True
+        self._set_charts_visible(False)
 
         # Initial state: drop zone
         self._show_dropzone()
