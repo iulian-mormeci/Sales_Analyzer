@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Sales Analyzer — Redesigned Desktop Dashboard.  Run: python main.py"""
 
-import os, sys, json, math, time, logging, threading
+import os, sys, json, math, time, logging, threading, warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple, Any
@@ -99,9 +100,10 @@ COLUMN_SYNONYMS: Dict[str, List[str]] = {
                 "data vendita","data_ordine","order_date","giorno","day","timestamp","anno","year"],
     "product": ["prodotto","product","categoria","category","articolo","item",
                 "nome_prodotto","nome prodotto","sku","descrizione","description","nome"],
-    "revenue": ["ricavo","revenue","fatturato","vendite","importo","amount","totale",
-                "total","prezzo","valore","value","incasso","guadagno","entrata","sales",
-                "price","ricavi","revenues","importo_totale"],
+    "revenue": ["ricavo","revenue","fatturato","vendite",
+                "importo calcolato","importo_calcolato","importo totale","importo_totale",
+                "importo","amount","totale","total","prezzo","valore","value",
+                "incasso","guadagno","entrata","sales","price","ricavi","revenues"],
     "quantity":["quantita","quantity","qty","pezzi","unita","units","quantità",
                 "num","numero","count","sold","venduti","q.ta","qta"],
     "channel": ["canale","channel","canale_vendita","sales_channel","tipo_vendita",
@@ -109,6 +111,10 @@ COLUMN_SYNONYMS: Dict[str, List[str]] = {
     "geo":     ["citta","city","città","regione","region","provincia","province",
                 "luogo","location","area","zona","zone","territorio"],
 }
+
+# Canonical role names used as column names in the combined DataFrame
+_CANONICAL_ROLES: Tuple[str, ...] = (
+    "date", "product", "revenue", "quantity", "channel", "geo")
 
 ITALIAN_CITIES: Dict[str, Tuple[float, float]] = {
     "Roma":(41.9028,12.4964),"Milano":(45.4654,9.1859),"Napoli":(40.8518,14.2681),
@@ -183,7 +189,7 @@ def _bar_gradient(n: int) -> List[str]:
             for i in range(n)]
 
 def _fmt_currency(v: float) -> str:
-    return f"€{v:,.0f}"
+    return f"€{v:,.2f}"
 
 def _fmt_count(v: float) -> str:
     return f"{int(v):,}"
@@ -225,9 +231,14 @@ class ColumnMapper:
         cols_lower = {c: c.lower().strip().replace(" ", "_") for c in columns}
         result: Dict[str, Optional[str]] = {role: None for role in COLUMN_SYNONYMS}
         for role, synonyms in COLUMN_SYNONYMS.items():
-            for col, col_l in cols_lower.items():
-                for syn in synonyms:
-                    if col_l == syn.replace(" ", "_") or col_l.startswith(syn):
+            # Iterate synonyms in priority order (most specific first), then
+            # look for any column that matches that synonym.  This prevents a
+            # low-priority synonym like "prezzo" from winning just because its
+            # column appears before a better match like "importo" in the sheet.
+            for syn in synonyms:
+                syn_n = syn.replace(" ", "_")
+                for col, col_l in cols_lower.items():
+                    if col_l == syn_n or col_l.startswith(syn_n):
                         result[role] = col
                         break
                 if result[role]:
@@ -476,14 +487,12 @@ class ChannelDropdown(tk.Frame):
         self._btn.update_idletasks()
         root = self.winfo_toplevel()
 
-        # Compute position relative to root window origin
-        bx = self._btn.winfo_rootx() - root.winfo_rootx()
-        by = (self._btn.winfo_rooty() - root.winfo_rooty()
-              + self._btn.winfo_height() + 4)
+        bx      = self._btn.winfo_rootx() - root.winfo_rootx()
+        btn_top = self._btn.winfo_rooty() - root.winfo_rooty()
+        btn_h   = self._btn.winfo_height()
 
         # Build panel as a child of root (no Toplevel = no focus theft)
         panel = tk.Frame(root, bg=C["border"])
-        panel.place(x=bx, y=by)
         self._panel = panel
 
         inner = tk.Frame(panel, bg=C["surface_elevated"])
@@ -512,6 +521,15 @@ class ChannelDropdown(tk.Frame):
                            activebackground=C["surface_elevated"],
                            font=(UI_FONT, fs(10)), command=self._update_label,
                            padx=4).pack(anchor="w")
+
+        # Place panel: open downward if there's room, otherwise flip upward
+        panel.update_idletasks()
+        panel_h  = panel.winfo_reqheight()
+        root_h   = root.winfo_height()
+        by_below = btn_top + btn_h + 4
+        by_above = btn_top - panel_h - 4
+        by = by_above if (by_below + panel_h > root_h and by_above >= 0) else by_below
+        panel.place(x=bx, y=by)
 
         # Raise the panel above all sibling widgets
         panel.lift()
@@ -989,7 +1007,7 @@ class ExcelColumnPicker(tk.Toplevel):
         # ── Action buttons ──
         rside = tk.Frame(bot, bg=C["surface"])
         rside.pack(side="right", padx=14)
-        _Btn(rside, "  Applica  ", self._apply,
+        _Btn(rside, "  ✓ Salva colonne  ", self._apply,
              bg=C["accent"], fg="#ffffff",
              font_args=(UI_FONT, fs(10), "bold"),
              padx=14, pady=sc(6)).pack(side="left", padx=4)
@@ -1834,7 +1852,7 @@ class Sidebar(tk.Frame):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class FilterBar(tk.Frame):
-    """Compact filter strip: ⚙ Colonne | dates | channel | Applica | Reset · 📊 Grafico."""
+    """Compact filter strip: ⚙ Opzioni | dates | channel | Applica | Reset · 📊 Grafico."""
 
     # Dimmed fg color used when buttons are disabled (pre-file-load)
     _DIM_FG = "#3a3a3a"
@@ -1857,9 +1875,9 @@ class FilterBar(tk.Frame):
             tk.Frame(row, bg=C["border"], width=1).pack(
                 side="left", fill="y", pady=8, padx=4)
 
-        # ── LEFT: ⚙ Colonne ──
+        # ── LEFT: ⚙ Opzioni ──
         self._col_btn = tk.Label(
-            row, text="⚙  Colonne", bg=C["surface"], fg=self._DIM_FG,
+            row, text="⚙  Opzioni", bg=C["surface"], fg=self._DIM_FG,
             font=(UI_FONT, fs(10)), padx=10, pady=5)
         self._col_btn.pack(side="left", padx=(2, 0))
         self._col_btn.bind("<Button-1>", lambda _: self._col_clicked())
@@ -1922,11 +1940,11 @@ class FilterBar(tk.Frame):
     def _redraw_col_badge(self) -> None:
         if self._col_badge and self._enabled:
             self._col_btn.config(
-                text="⚙  Colonne  ●",
+                text="⚙  Opzioni  ●",
                 fg="#f97316")   # orange dot
         else:
             self._col_btn.config(
-                text="⚙  Colonne",
+                text="⚙  Opzioni",
                 fg=C["text_secondary"] if self._enabled else self._DIM_FG)
 
     def _col_clicked(self) -> None:
@@ -3151,6 +3169,255 @@ class GeoMapView(BaseView):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# File Manager Dialog
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class FileManagerDialog(tk.Toplevel):
+    """
+    Shows all loaded files with per-file enable/disable and column config access.
+    Changes take effect only when 'Applica' is clicked.
+    """
+
+    def __init__(self, parent: "SalesAnalyzerApp"):
+        super().__init__(parent)
+        self._app = parent
+        self.title("Gestione File")
+        self.configure(bg=C["bg"])
+        self.resizable(True, True)
+
+        w, h = sc(700), sc(460)
+        px = parent.winfo_x() + (parent.winfo_width()  - w) // 2
+        py = parent.winfo_y() + (parent.winfo_height() - h) // 2
+        self.geometry(f"{w}x{h}+{px}+{py}")
+        self.minsize(sc(520), sc(320))
+
+        self._build()
+        self.grab_release()
+        self.grab_set()
+        self.focus_force()
+        self.protocol("WM_DELETE_WINDOW", self._close)
+
+    def _build(self) -> None:
+        # Header
+        hdr = tk.Frame(self, bg=C["surface"])
+        hdr.pack(fill="x")
+        tk.Label(hdr, text="Gestione File",
+                 font=(UI_FONT, fs(13), "bold"),
+                 bg=C["surface"], fg=C["text_primary"]).pack(
+            side="left", padx=sc(16), pady=sc(12))
+        tk.Label(hdr, text="Abilita/disabilita file, configura colonne, aggiungi o rimuovi.",
+                 font=(UI_FONT, fs(9)),
+                 bg=C["surface"], fg=C["text_secondary"]).pack(
+            side="left", padx=sc(4))
+
+        # Scrollable file list
+        list_outer = tk.Frame(self, bg=C["bg"])
+        list_outer.pack(fill="both", expand=True, padx=sc(12), pady=(sc(8), 0))
+
+        self._canvas = tk.Canvas(list_outer, bg=C["bg"], highlightthickness=0)
+        sb = ttk.Scrollbar(list_outer, orient="vertical", command=self._canvas.yview)
+        self._inner = tk.Frame(self._canvas, bg=C["bg"])
+        self._inner.bind("<Configure>",
+                         lambda e: self._canvas.configure(
+                             scrollregion=self._canvas.bbox("all")))
+        self._canvas.create_window((0, 0), window=self._inner, anchor="nw")
+        self._canvas.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self._canvas.pack(side="left", fill="both", expand=True)
+
+        self._rebuild_list()
+
+        # Footer
+        foot = tk.Frame(self, bg=C["surface"], height=sc(54))
+        foot.pack(fill="x", side="bottom")
+        foot.pack_propagate(False)
+        tk.Frame(foot, bg=C["border"], height=1).pack(fill="x")
+
+        _Btn(foot, "✕  Chiudi", self._close,
+             bg=C["surface"], fg=C["text_secondary"],
+             font_args=(UI_FONT, fs(10)), padx=sc(14), pady=sc(8)).pack(
+            side="right", padx=sc(8), pady=sc(8))
+        _Btn(foot, "✓  Applica", self._apply,
+             bg=C["accent"], fg="#ffffff",
+             font_args=(UI_FONT, fs(10), "bold"), padx=sc(14), pady=sc(8)).pack(
+            side="right", padx=(0, sc(4)), pady=sc(8))
+        _Btn(foot, "+  Aggiungi file", self._add_files,
+             bg=C["surface"], fg=C["text_primary"],
+             font_args=(UI_FONT, fs(10)), padx=sc(14), pady=sc(8)).pack(
+            side="left", padx=sc(8), pady=sc(8))
+
+    def _rebuild_list(self) -> None:
+        for w in self._inner.winfo_children():
+            w.destroy()
+
+        if not self._app._file_registry:
+            tk.Label(self._inner, text="Nessun file caricato.",
+                     font=(UI_FONT, fs(10)), bg=C["bg"],
+                     fg=C["text_secondary"]).pack(pady=sc(20), padx=sc(16))
+            return
+
+        # Column header row
+        hdr = tk.Frame(self._inner, bg=C["border"])
+        hdr.pack(fill="x", pady=(0, sc(2)))
+        for text, w_px in [("", 28), ("File", 260), ("Righe", 58), ("Colonne", 84), ("", 96), ("", 34)]:
+            tk.Label(hdr, text=text, font=(UI_FONT, fs(8), "bold"),
+                     bg=C["border"], fg=C["text_secondary"],
+                     width=int(w_px * _SF / 8), anchor="w").pack(
+                side="left", padx=4, pady=sc(3))
+
+        for idx, entry in enumerate(self._app._file_registry):
+            self._build_row(idx, entry)
+
+    def _build_row(self, idx: int, entry: Dict) -> None:
+        active  = entry["enabled"]
+        row_bg  = C["surface"] if idx % 2 == 0 else C["bg"]
+        dim_fg  = C["text_secondary"]
+        text_fg = C["text_primary"] if active else dim_fg
+
+        row = tk.Frame(self._inner, bg=row_bg, pady=sc(3))
+        row.pack(fill="x")
+
+        # Colored left bar: accent when active, border when inactive
+        tk.Frame(row, bg=C["accent"] if active else C["border"],
+                 width=sc(3)).pack(side="left", fill="y", padx=(0, sc(4)))
+
+        # Enable checkbox
+        var = tk.BooleanVar(value=active)
+        tk.Checkbutton(row, variable=var, bg=row_bg, activebackground=row_bg,
+                       selectcolor=C["accent"],
+                       command=lambda e=entry, v=var: self._toggle_enable(e, v)
+                       ).pack(side="left")
+
+        # Filename
+        name  = entry["name"]
+        short = name if len(name) <= 34 else name[:32] + "…"
+        font  = (UI_FONT, fs(10)) if active else (UI_FONT, fs(10))
+        tk.Label(row, text=short, font=font,
+                 bg=row_bg, fg=text_fg,
+                 anchor="w", width=30).pack(side="left", padx=sc(6))
+
+        # Row count
+        tk.Label(row, text=f"{len(entry['df_raw']):,}",
+                 font=(MONO_FONT, fs(9)), bg=row_bg,
+                 fg=text_fg if active else dim_fg,
+                 width=7, anchor="e").pack(side="left", padx=sc(4))
+
+        # Revenue column name + raw total (helps diagnose wrong-column issues)
+        m       = entry["mapping"]
+        rev_raw = m.get("revenue")
+        df_raw  = entry["df_raw"]
+        if isinstance(rev_raw, list):
+            cols      = [c for c in rev_raw if c in df_raw.columns]
+            rev_sum   = sum(pd.to_numeric(df_raw[c], errors="coerce").sum() for c in cols)
+            col_label = "€ (multi)"
+        elif rev_raw and rev_raw in df_raw.columns:
+            rev_sum   = float(pd.to_numeric(df_raw[rev_raw], errors="coerce").sum())
+            col_label = f"€ {rev_raw[:12]}" if len(rev_raw) <= 12 else f"€ {rev_raw[:10]}…"
+        else:
+            rev_sum   = None
+            col_label = "–"
+        total_label = f"{rev_sum:>10,.0f}" if rev_sum is not None else "–"
+        tk.Label(row, text=col_label, font=(MONO_FONT, fs(8)),
+                 bg=row_bg, fg=C["text_secondary"] if active else dim_fg,
+                 width=14, anchor="w").pack(side="left", padx=(sc(4), 0))
+        tk.Label(row, text=total_label, font=(MONO_FONT, fs(8)),
+                 bg=row_bg,
+                 fg=(C["accent_green"] if rev_sum else dim_fg) if active else dim_fg,
+                 width=11, anchor="e").pack(side="left", padx=(0, sc(4)))
+
+        # Configure columns button (only meaningful when active)
+        _Btn(row, "⚙  Colonne",
+             lambda e=entry: self._configure_file(e),
+             bg=C["surface"], fg=text_fg,
+             font_args=(UI_FONT, fs(9)), padx=sc(8), pady=sc(3)).pack(
+            side="left", padx=sc(4))
+
+        # Remove button
+        _Btn(row, "✕",
+             lambda i=idx: self._remove_file(i),
+             bg=C["surface"], fg=C["accent_warm"],
+             font_args=(UI_FONT, fs(9)), padx=sc(8), pady=sc(3)).pack(
+            side="right", padx=sc(8))
+
+    def _toggle_enable(self, entry: Dict, var: tk.BooleanVar) -> None:
+        entry["enabled"] = var.get()
+        self._rebuild_list()
+        self._app._apply_file_manager()
+
+    def _configure_file(self, entry: Dict) -> None:
+        self.grab_release()
+        dlg = ExcelColumnPicker(self._app, entry["df_raw"],
+                                entry["mapping"], self._app._mapper)
+        self._app.wait_window(dlg)
+        if dlg.result:
+            entry["mapping"] = dlg.result
+        elif dlg.reset_to_auto:
+            entry["mapping"] = self._app._mapper.auto_map(
+                list(entry["df_raw"].columns))
+        self.grab_set()
+        self.focus_force()
+        self._rebuild_list()
+
+    def _remove_file(self, idx: int) -> None:
+        if 0 <= idx < len(self._app._file_registry):
+            self._app._file_registry.pop(idx)
+        self._rebuild_list()
+
+    def _add_files(self) -> None:
+        self.grab_release()
+        init = self._app._cfg.get("last_folder", str(Path.home()))
+        paths = filedialog.askopenfilenames(
+            parent=self,
+            title="Aggiungi file/i Excel",
+            initialdir=init,
+            filetypes=[("Excel", "*.xlsx *.xls *.xlsm"), ("Tutti", "*.*")],
+        )
+        if paths:
+            self._app._cfg.set("last_folder", str(Path(paths[0]).parent))
+            existing_names = {e["name"] for e in self._app._file_registry}
+            for p in paths:
+                name = Path(p).name
+                if name in existing_names:
+                    continue
+                try:
+                    df = pd.read_excel(p, engine="openpyxl")
+                    df["__file"] = name
+                    for col in df.columns:
+                        if df[col].dtype == object:
+                            try:
+                                df[col] = pd.to_datetime(
+                                    df[col], dayfirst=True,
+                                    infer_datetime_format=True)
+                            except Exception:
+                                pass
+                    mapping = self._app._mapper.auto_map(list(df.columns))
+                    self._app._file_registry.append({
+                        "name":    name,
+                        "df_raw":  df,
+                        "mapping": mapping,
+                        "enabled": True,
+                    })
+                    existing_names.add(name)
+                except Exception as exc:
+                    messagebox.showerror("Errore",
+                                         f"Impossibile aprire {name}:\n{exc}",
+                                         parent=self)
+        self.grab_set()
+        self.focus_force()
+        self._rebuild_list()
+
+    def _apply(self) -> None:
+        self.grab_release()
+        self.destroy()
+        self._app._apply_file_manager()
+
+    def _close(self) -> None:
+        self.grab_release()
+        self.destroy()
+        self._app.focus_force()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Main Application
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -3175,9 +3442,8 @@ class SalesAnalyzerApp(tk.Tk):
         self._cur_view      = "trend"
         self._update_dismissed = False
         self._loading_widget:  Optional[tk.Widget]  = None
-        self._manual_mapping   = False
-        self._current_filename = ""
         self._chart_panel:     Optional[ChartTypePanel] = None
+        self._file_registry:   List[Dict]               = []
 
         # Per-view chart types (restored from config or default)
         saved_ct = self._cfg.get("chart_types", {})
@@ -3311,14 +3577,12 @@ class SalesAnalyzerApp(tk.Tk):
             self._kpi_row_f.pack_forget()
             self._kpi_row_f.pack(fill="x", padx=12, pady=(10, 0))
             self._kpi_center.pack_configure(fill="x", expand=False)
-            self._fbar.pack(fill="x", pady=(10, 0))
             self._chart_wrap.pack(fill="both", expand=True)
             self._bbar.pack(fill="x")
             self._kpi.set_large(False)
             self._ch_breakdown.set_large(False)
         else:
             # ── Dashboard mode: KPI centered, charts hidden ────────────────────
-            self._fbar.pack_forget()
             self._chart_wrap.pack_forget()
             self._bbar.pack_forget()
             # Re-pack kpi_row between spacers for vertical centering
@@ -3377,115 +3641,106 @@ class SalesAnalyzerApp(tk.Tk):
 
         def _load():
             try:
-                dfs = []
+                entries = []
                 for p in paths:
                     d = pd.read_excel(p, engine="openpyxl")
                     d["__file"] = Path(p).name
-                    dfs.append(d)
-                combined = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0]
-                names = [Path(p).name for p in paths]
-                self.after(0, lambda: self._on_loaded(combined, names))
+                    entries.append({"name": Path(p).name, "df": d})
+                self.after(0, lambda: self._on_loaded(entries))
             except Exception as exc:
                 log.error(f"Excel load error: {exc}")
                 self.after(0, lambda: self._on_load_error(str(exc)))
 
         threading.Thread(target=_load, daemon=True).start()
 
-    def _on_loaded(self, df: pd.DataFrame,
-                   filenames) -> None:
+    def _on_loaded(self, entries: List[Dict]) -> None:
         self._hide_loading()
-        if isinstance(filenames, list):
-            self._all_filenames    = filenames
-            self._current_filename = filenames[0]
-            display_name = (filenames[0] if len(filenames) == 1
-                            else f"{len(filenames)} file caricati")
-        else:
-            self._all_filenames    = [filenames]
-            self._current_filename = filenames
-            display_name           = filenames
+        self._file_registry = []
 
-        # Try to parse date-like object columns
-        for col in df.columns:
-            if df[col].dtype == object:
-                try:
-                    df[col] = pd.to_datetime(df[col], dayfirst=True,
-                                             infer_datetime_format=True)
-                except Exception:
-                    pass
+        saved_mappings = self._cfg.get("column_mapping", {}) or {}
 
-        columns = list(df.columns)
+        for entry in entries:
+            name = entry["name"]
+            df   = entry["df"]
 
-        # Check for a previously saved manual mapping for this filename
-        saved_mappings = self._cfg.get("column_mapping", {})
-        saved = saved_mappings.get(self._current_filename)
-        if saved and all(saved.get(r) is None or saved.get(r) in columns
-                         for r in COLUMN_SYNONYMS):
-            mapping = saved
-            self._manual_mapping = True
-        else:
-            mapping = self._mapper.auto_map(columns)
-            self._manual_mapping = False
+            # Try to parse date-like object columns
+            for col in df.columns:
+                if df[col].dtype == object:
+                    try:
+                        df[col] = pd.to_datetime(df[col], dayfirst=True,
+                                                 infer_datetime_format=True)
+                    except Exception:
+                        pass
 
-        if not self._mapper.is_complete(mapping):
-            dlg = ColumnMappingDialog(self, columns, mapping)
-            self.wait_window(dlg)
-            if dlg.result is None:
-                self._show_dropzone()
-                return
-            mapping = dlg.result
+            columns = list(df.columns)
+            saved = saved_mappings.get(name)
+            if saved and all(saved.get(r) is None or saved.get(r) in columns
+                             for r in COLUMN_SYNONYMS):
+                mapping = saved
+            else:
+                mapping = self._mapper.auto_map(columns)
 
-        # Coerce types
-        date_col = mapping["date"]
-        try:
-            df[date_col] = pd.to_datetime(df[date_col], dayfirst=True)
-        except Exception as e:
-            messagebox.showerror("Colonna Data",
-                                 f"Impossibile interpretare la colonna data:\n{e}")
+            if not self._mapper.is_complete(mapping):
+                dlg = ColumnMappingDialog(self, columns, mapping)
+                self.wait_window(dlg)
+                if dlg.result is None:
+                    self._show_dropzone()
+                    return
+                mapping = dlg.result
+
+            self._file_registry.append({
+                "name":    name,
+                "df_raw":  df,
+                "mapping": mapping,
+                "enabled": True,
+            })
+
+        combined = self._rebuild_combined_df()
+        if combined is None or combined.empty:
+            messagebox.showerror("Errore", "Impossibile combinare i file.")
             self._show_dropzone()
             return
 
-        for role in ("revenue", "quantity"):
-            col = mapping.get(role)
-            if col and col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+        if "date" not in combined.columns or combined["date"].isna().all():
+            messagebox.showerror("Colonna Data",
+                                 "Impossibile interpretare la colonna data.")
+            self._show_dropzone()
+            return
 
-        # Fill blank channel cells with "Banco"
-        ch_col = mapping.get("channel")
-        if ch_col and ch_col in df.columns:
-            df[ch_col] = (df[ch_col]
-                          .fillna("Banco")
-                          .apply(lambda x: "Banco" if str(x).strip() == "" else x))
-
-        self._df_raw      = df
-        self._mapping     = mapping
-        self._df_filtered = df.copy()
+        self._df_raw      = combined
+        self._mapping     = {role: role for role in _CANONICAL_ROLES
+                             if role in combined.columns}
+        self._df_filtered = combined.copy()
 
         # Restore saved chart types to view instances
         for vk, ct in self._chart_types.items():
             if vk in self._views:
                 self._views[vk]._chart_type = ct
 
-        # Populate filter bar channel dropdown
-        if ch_col and ch_col in df.columns:
-            self._fbar.channel_dd.set_options(
-                sorted(df[ch_col].unique().tolist()))
+        n = len(entries)
+        display_name = entries[0]["name"] if n == 1 else f"{n} file caricati"
 
-        dmin = df[date_col].min().date()
-        dmax = df[date_col].max().date()
+        if "channel" in combined.columns:
+            self._fbar.channel_dd.set_options(
+                sorted(combined["channel"].unique().tolist()))
+
+        dmin = combined["date"].min().date()
+        dmax = combined["date"].max().date()
         self._fbar.set_date(self._fbar.date_from, dmin)
         self._fbar.set_date(self._fbar.date_to,   dmax)
 
         self._fbar.set_buttons_enabled(True)
-        self._fbar.set_col_badge(self._manual_mapping)
+        self._fbar.set_col_badge(False)
 
         self.title(f"Sales Analyzer v{APP_VERSION} — {display_name}")
         self._topbar.set_filename(display_name)
         self._topbar.show_add_button(True)
 
-        self._ch_breakdown.update(df, ch_col, mapping.get("revenue"))
+        self._ch_breakdown.update(combined,
+                                  "channel" if "channel" in combined.columns else None,
+                                  "revenue" if "revenue" in combined.columns else None)
         self._update_kpis()
         self._switch_view(self._cur_view, animate=False)
-        # After loading, switch to dashboard mode (charts hidden, big KPIs)
         self._set_charts_visible(False)
 
     def _on_load_error(self, msg: str) -> None:
@@ -3500,7 +3755,7 @@ class SalesAnalyzerApp(tk.Tk):
 
     def _add_excel(self) -> None:
         """Add one or more extra Excel files to the current dataset."""
-        if self._df_raw is None:
+        if not self._file_registry:
             return
         init = self._cfg.get("last_folder", str(Path.home()))
         paths = filedialog.askopenfilenames(
@@ -3510,80 +3765,53 @@ class SalesAnalyzerApp(tk.Tk):
         )
         if not paths:
             return
+        self._cfg.set("last_folder", str(Path(paths[0]).parent))
         self._show_loading()
-
-        existing   = self._df_raw.copy()
-        mapping    = self._mapping.copy()
-        date_col   = mapping.get("date")
-        ch_col     = mapping.get("channel")
 
         def _load():
             try:
-                dfs = [existing]
+                new_entries = []
                 for p in paths:
                     d = pd.read_excel(p, engine="openpyxl")
                     d["__file"] = Path(p).name
-                    # Parse dates
-                    if date_col and date_col in d.columns:
-                        try:
-                            d[date_col] = pd.to_datetime(
-                                d[date_col], dayfirst=True)
-                        except Exception:
-                            pass
-                    # Coerce numeric columns
-                    for role in ("revenue", "quantity"):
-                        col = mapping.get(role)
-                        if col and col in d.columns:
-                            d[col] = pd.to_numeric(
-                                d[col], errors="coerce").fillna(0)
-                    # Fill blank channel
-                    if ch_col and ch_col in d.columns:
-                        d[ch_col] = (d[ch_col]
-                                     .fillna("Banco")
-                                     .apply(lambda x: "Banco"
-                                            if str(x).strip() == "" else x))
-                    dfs.append(d)
-                combined   = pd.concat(dfs, ignore_index=True)
-                new_names  = [Path(p).name for p in paths]
-                self.after(0, lambda: self._on_files_added(combined, new_names))
+                    new_entries.append({"name": Path(p).name, "df": d})
+                self.after(0, lambda: self._on_files_added(new_entries))
             except Exception as exc:
                 log.error(f"Excel add error: {exc}")
                 self.after(0, lambda: self._on_load_error(str(exc)))
 
         threading.Thread(target=_load, daemon=True).start()
 
-    def _on_files_added(self, df: pd.DataFrame,
-                        new_names: List[str]) -> None:
+    def _on_files_added(self, new_entries: List[Dict]) -> None:
         self._hide_loading()
-        self._all_filenames = getattr(self, "_all_filenames",
-                                      [self._current_filename]) + new_names
-        total = len(self._all_filenames)
-        display_name = f"{total} file caricati"
+        saved_mappings = self._cfg.get("column_mapping", {}) or {}
 
-        self._df_raw      = df
-        self._df_filtered = df.copy()
+        for entry in new_entries:
+            name = entry["name"]
+            if any(e["name"] == name for e in self._file_registry):
+                continue
+            df = entry["df"]
+            for col in df.columns:
+                if df[col].dtype == object:
+                    try:
+                        df[col] = pd.to_datetime(df[col], dayfirst=True,
+                                                 infer_datetime_format=True)
+                    except Exception:
+                        pass
+            saved = saved_mappings.get(name)
+            if saved and all(saved.get(r) is None or saved.get(r) in df.columns
+                             for r in COLUMN_SYNONYMS):
+                mapping = saved
+            else:
+                mapping = self._mapper.auto_map(list(df.columns))
+            self._file_registry.append({
+                "name":    name,
+                "df_raw":  df,
+                "mapping": mapping,
+                "enabled": True,
+            })
 
-        # Refresh channel dropdown
-        ch_col = self._mapping.get("channel")
-        if ch_col and ch_col in df.columns:
-            self._fbar.channel_dd.set_options(
-                sorted(df[ch_col].unique().tolist()))
-
-        # Expand date range
-        date_col = self._mapping.get("date")
-        if date_col and date_col in df.columns:
-            dmin = df[date_col].min().date()
-            dmax = df[date_col].max().date()
-            self._fbar.set_date(self._fbar.date_from, dmin)
-            self._fbar.set_date(self._fbar.date_to,   dmax)
-
-        self.title(f"Sales Analyzer v{APP_VERSION} — {display_name}")
-        self._topbar.set_filename(display_name)
-
-        self._ch_breakdown.update(df, self._mapping.get("channel"),
-                                  self._mapping.get("revenue"))
-        self._update_kpis()
-        self._views[self._cur_view].refresh(self._df_filtered, self._mapping)
+        self._apply_file_manager()
 
     # ── Filters ───────────────────────────────────────────────────────────────
 
@@ -3740,71 +3968,97 @@ class SalesAnalyzerApp(tk.Tk):
                 out[role] = val or None
         return out
 
-    def _open_col_config(self) -> None:
-        if self._df_raw is None:
+    def _rebuild_combined_df(self) -> Optional[pd.DataFrame]:
+        """Normalise each enabled registry entry to canonical column names, then concat."""
+        parts = []
+        for entry in self._file_registry:
+            if not entry["enabled"]:
+                continue
+            df  = entry["df_raw"].copy()
+            norm = self._normalize_mapping(df, entry["mapping"])
+            rename: Dict[str, str] = {}
+            for role, col in norm.items():
+                if col and col in df.columns and col != role:
+                    rename[col] = role
+            if rename:
+                df = df.rename(columns=rename)
+            if "date" in df.columns:
+                df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
+            for r in ("revenue", "quantity"):
+                if r in df.columns:
+                    df[r] = pd.to_numeric(df[r], errors="coerce").fillna(0)
+            if "channel" in df.columns:
+                df["channel"] = (df["channel"].fillna("Banco")
+                                 .apply(lambda x: "Banco"
+                                        if str(x).strip() == "" else x))
+            parts.append(df)
+        if not parts:
+            return None
+        return pd.concat(parts, ignore_index=True)
+
+    def _apply_file_manager(self) -> None:
+        """Rebuild combined df from registry and refresh all views."""
+        combined = self._rebuild_combined_df()
+        if combined is None or combined.empty:
+            messagebox.showwarning("File Manager", "Nessun file abilitato.")
             return
-        dlg = ExcelColumnPicker(self, self._df_raw, self._mapping, self._mapper)
+
+        self._df_raw  = combined
+        self._mapping = {role: role for role in _CANONICAL_ROLES
+                         if role in combined.columns}
+
+        enabled = [e for e in self._file_registry if e["enabled"]]
+        n = len(enabled)
+        display_name = (enabled[0]["name"] if n == 1
+                        else (f"{n} file caricati" if n > 1 else "–"))
+
+        self.title(f"Sales Analyzer v{APP_VERSION} — {display_name}")
+        self._topbar.set_filename(display_name)
+        self._topbar.show_add_button(True)
+
+        if "channel" in combined.columns:
+            self._fbar.channel_dd.set_options(
+                sorted(combined["channel"].unique().tolist()))
+
+        # Clamp the existing date filter to the new data range without resetting it
+        if "date" in combined.columns:
+            data_min = combined["date"].min().date()
+            data_max = combined["date"].max().date()
+            cur_from = self._fbar.get_date(self._fbar.date_from)
+            cur_to   = self._fbar.get_date(self._fbar.date_to)
+            if cur_from is None or cur_from < data_min or cur_from > data_max:
+                self._fbar.set_date(self._fbar.date_from, data_min)
+            if cur_to is None or cur_to < data_min or cur_to > data_max:
+                self._fbar.set_date(self._fbar.date_to, data_max)
+
+        self._fbar.set_buttons_enabled(True)
+        self._fbar.set_col_badge(False)
+
+        # Re-apply current filter bar state to the new combined dataset
+        df = combined.copy()
+        if "date" in combined.columns:
+            d_from = self._fbar.get_date(self._fbar.date_from)
+            d_to   = self._fbar.get_date(self._fbar.date_to)
+            if d_from:
+                df = df[df["date"].dt.date >= d_from]
+            if d_to:
+                df = df[df["date"].dt.date <= d_to]
+        ch_sel = self._fbar.channel_dd.get_selected()
+        if ch_sel and "channel" in df.columns:
+            df = df[df["channel"].isin(ch_sel)]
+        self._df_filtered = df if not df.empty else combined.copy()
+
+        self._ch_breakdown.update(self._df_filtered,
+                                  "channel" if "channel" in combined.columns else None,
+                                  "revenue" if "revenue" in combined.columns else None)
+        self._update_kpis()
+        self._views[self._cur_view].refresh(self._df_filtered, self._mapping)
+
+    def _open_col_config(self) -> None:
+        if not self._file_registry:
+            return
+        dlg = FileManagerDialog(self)
         self.wait_window(dlg)
-        if dlg.result:
-            raw_result = dlg.result
-            # Persist the raw (possibly multi-column) mapping
-            saved = self._cfg.get("column_mapping", {}) or {}
-            saved[self._current_filename] = raw_result
-            self._cfg.set("column_mapping", saved)
-            self._manual_mapping = True
-            self._fbar.set_col_badge(True)
-
-            norm = self._normalize_mapping(self._df_raw, raw_result)
-            self._mapping = norm
-
-            # Re-coerce types with new mapping
-            date_col = norm.get("date")
-            if date_col:
-                try:
-                    self._df_raw[date_col] = pd.to_datetime(
-                        self._df_raw[date_col], dayfirst=True)
-                except Exception:
-                    pass
-            for role in ("revenue", "quantity"):
-                col = norm.get(role)
-                if col and col in self._df_raw.columns:
-                    self._df_raw[col] = pd.to_numeric(
-                        self._df_raw[col], errors="coerce").fillna(0)
-
-            # Fill blank channel cells with "Banco"
-            ch_col = norm.get("channel")
-            if ch_col and ch_col in self._df_raw.columns:
-                self._df_raw[ch_col] = (self._df_raw[ch_col]
-                                        .fillna("Banco")
-                                        .apply(lambda x: "Banco"
-                                               if str(x).strip() == "" else x))
-                self._fbar.channel_dd.set_options(
-                    sorted(self._df_raw[ch_col].unique().tolist()))
-
-            self._df_filtered = self._df_raw.copy()
-            self._update_kpis()
-            self._views[self._cur_view].refresh(self._df_filtered, self._mapping)
-
-        elif dlg.reset_to_auto:
-            self._manual_mapping = False
-            saved = self._cfg.get("column_mapping", {}) or {}
-            saved.pop(self._current_filename, None)
-            self._cfg.set("column_mapping", saved)
-            self._fbar.set_col_badge(False)
-            auto = self._mapper.auto_map(list(self._df_raw.columns))
-            self._mapping = self._normalize_mapping(self._df_raw, auto)
-            # Fill blank channel with "Banco" on auto-reset too
-            ch_col = self._mapping.get("channel")
-            if ch_col and ch_col in self._df_raw.columns:
-                self._df_raw[ch_col] = (self._df_raw[ch_col]
-                                        .fillna("Banco")
-                                        .apply(lambda x: "Banco"
-                                               if str(x).strip() == "" else x))
-                self._fbar.channel_dd.set_options(
-                    sorted(self._df_raw[ch_col].unique().tolist()))
-            self._df_filtered = self._df_raw.copy()
-            self._update_kpis()
-            self._views[self._cur_view].refresh(self._df_filtered, self._mapping)
 
     # ── Feature 2: Chart type panel ───────────────────────────────────────────
 
